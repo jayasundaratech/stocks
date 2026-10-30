@@ -1,10 +1,11 @@
 const SYMBOLS = [
-  { symbol: 'XAUTUSDT', name: 'Gold Tether / USDT', base: 4157.52, volatility: 8.2 },
-  { symbol: 'BTCUSDT', name: 'Bitcoin / USDT', base: 69420.18, volatility: 180 },
-  { symbol: 'ETHUSDT', name: 'Ethereum / USDT', base: 3825.74, volatility: 28 },
-  { symbol: 'QQQM', name: 'Invesco NASDAQ 100 ETF', base: 195.02, volatility: 1.1 },
-  { symbol: 'VFV.TO', name: 'Vanguard S&P 500 Index ETF', base: 151.68, volatility: .75 },
-  { symbol: 'RY.TO', name: 'Royal Bank of Canada', base: 208.31, volatility: 1.0 },
+  { symbol: 'BTCUSDT', name: 'Bitcoin / USDT' },
+  { symbol: 'ETHUSDT', name: 'Ethereum / USDT' },
+  { symbol: 'BNBUSDT', name: 'BNB / USDT' },
+  { symbol: 'SOLUSDT', name: 'Solana / USDT' },
+  { symbol: 'XRPUSDT', name: 'XRP / USDT' },
+  { symbol: 'DOGEUSDT', name: 'Dogecoin / USDT' },
+  { symbol: 'ADAUSDT', name: 'Cardano / USDT' },
 ];
 
 const TIMEFRAMES = [
@@ -16,45 +17,15 @@ const TIMEFRAMES = [
   { label: '1d', seconds: 86400 },
 ];
 
+const REST_BASE = 'https://api.binance.com/api/v3/klines';
+const WS_BASE = 'wss://stream.binance.com:9443/ws';
 const chartStates = [];
 
-function seededRandom(seed) {
-  let value = seed % 2147483647;
-  if (value <= 0) value += 2147483646;
-  return () => (value = value * 16807 % 2147483647) / 2147483647;
-}
-
-function hashString(value) {
-  return [...value].reduce((acc, char) => ((acc << 5) - acc) + char.charCodeAt(0), 17) >>> 0;
-}
-
-function generateCandles(symbolInfo, timeframe, count = 90) {
-  const seed = hashString(`${symbolInfo.symbol}-${timeframe.label}`);
-  const random = seededRandom(seed);
-  const now = Math.floor(Date.now() / timeframe.seconds) * timeframe.seconds;
-  let lastClose = symbolInfo.base * (0.94 + random() * 0.10);
-  const candles = [];
-
-  for (let i = count - 1; i >= 0; i--) {
-    const time = now - i * timeframe.seconds;
-    const wave = Math.sin((count - i) / 7) * symbolInfo.volatility * .22;
-    const shock = (random() - .5) * symbolInfo.volatility;
-    const open = lastClose;
-    const close = Math.max(.01, open + wave * .2 + shock);
-    const high = Math.max(open, close) + random() * symbolInfo.volatility * .55;
-    const low = Math.max(.01, Math.min(open, close) - random() * symbolInfo.volatility * .55);
-    const volume = Math.round((250 + random() * 1750) * (1 + Math.abs(close - open) / Math.max(1, symbolInfo.volatility)));
-    candles.push({ time, open, high, low, close, volume });
-    lastClose = close;
-  }
-
-  return candles;
-}
-
 function fmtPrice(value) {
-  if (value >= 10000) return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (value >= 100) return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  if (!Number.isFinite(value)) return '--';
+  if (value >= 1000) return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (value >= 1) return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return value.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 8 });
 }
 
 function fmtTime(timestamp, timeframe) {
@@ -63,18 +34,141 @@ function fmtTime(timestamp, timeframe) {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+function normalizeKline(row) {
+  return {
+    time: Math.floor(Number(row[0]) / 1000),
+    open: Number(row[1]),
+    high: Number(row[2]),
+    low: Number(row[3]),
+    close: Number(row[4]),
+    volume: Number(row[5]),
+  };
+}
+
+async function loadHistorical(state) {
+  state.loadingToken += 1;
+  const token = state.loadingToken;
+  setConnectionState(state, 'loading', 'Loading Binance data…');
+
+  const url = `${REST_BASE}?symbol=${encodeURIComponent(state.symbolInfo.symbol)}&interval=${encodeURIComponent(state.timeframe.label)}&limit=120`;
+  const response = await fetch(url, { cache: 'no-store' });
+
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = await response.json();
+      detail = body?.msg ? `: ${body.msg}` : '';
+    } catch (_) {}
+    throw new Error(`Binance REST ${response.status}${detail}`);
+  }
+
+  const rows = await response.json();
+  if (token !== state.loadingToken) return;
+  if (!Array.isArray(rows) || !rows.length) throw new Error('No candle data returned');
+
+  state.candles = rows.map(normalizeKline);
+  render(state);
+  connectWebSocket(state);
+}
+
+function connectWebSocket(state) {
+  disconnectWebSocket(state);
+  const stream = `${state.symbolInfo.symbol.toLowerCase()}@kline_${state.timeframe.label}`;
+  const socket = new WebSocket(`${WS_BASE}/${stream}`);
+  state.socket = socket;
+
+  socket.addEventListener('open', () => {
+    if (state.socket !== socket) return;
+    setConnectionState(state, 'live', 'LIVE • Binance WebSocket');
+  });
+
+  socket.addEventListener('message', event => {
+    if (state.socket !== socket) return;
+    try {
+      const payload = JSON.parse(event.data);
+      const k = payload.k;
+      if (!k) return;
+
+      const candle = {
+        time: Math.floor(Number(k.t) / 1000),
+        open: Number(k.o),
+        high: Number(k.h),
+        low: Number(k.l),
+        close: Number(k.c),
+        volume: Number(k.v),
+      };
+
+      const last = state.candles[state.candles.length - 1];
+      if (!last || candle.time > last.time) {
+        state.candles.push(candle);
+        if (state.candles.length > 120) state.candles.shift();
+      } else if (candle.time === last.time) {
+        state.candles[state.candles.length - 1] = candle;
+      }
+
+      render(state);
+    } catch (error) {
+      console.error('WebSocket parse error', error);
+    }
+  });
+
+  socket.addEventListener('close', () => {
+    if (state.socket !== socket) return;
+    setConnectionState(state, 'offline', 'Disconnected • reconnecting…');
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = setTimeout(() => connectWebSocket(state), 2500);
+  });
+
+  socket.addEventListener('error', () => {
+    if (state.socket !== socket) return;
+    setConnectionState(state, 'offline', 'WebSocket error');
+  });
+}
+
+function disconnectWebSocket(state) {
+  clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+  if (state.socket) {
+    const socket = state.socket;
+    state.socket = null;
+    try { socket.close(); } catch (_) {}
+  }
+}
+
+function setConnectionState(state, mode, text) {
+  state.status.textContent = text;
+  state.status.dataset.state = mode;
+  const badge = state.card.querySelector('.chart-badge');
+  badge.textContent = mode === 'live' ? 'BINANCE LIVE' : mode === 'loading' ? 'CONNECTING' : 'OFFLINE';
+}
+
+async function refreshState(state) {
+  disconnectWebSocket(state);
+  state.candles = [];
+  render(state);
+  try {
+    await loadHistorical(state);
+  } catch (error) {
+    console.error(error);
+    setConnectionState(state, 'offline', error.message || 'Unable to load Binance data');
+    state.price.textContent = '--';
+    state.change.textContent = 'Check symbol / network';
+    state.change.className = 'change negative';
+  }
+}
+
 function makeCard(card, index) {
-  const startingSymbol = SYMBOLS[index === 0 ? 0 : index % SYMBOLS.length];
-  const startingTf = TIMEFRAMES[index === 0 ? 3 : index % 4];
+  const startingSymbol = SYMBOLS[index % SYMBOLS.length];
+  const startingTf = TIMEFRAMES[index === 0 ? 0 : index % 4];
 
   card.innerHTML = `
     <div class="chart-toolbar">
       <div class="symbol-search-wrap">
-        <input class="symbol-search" value="${startingSymbol.symbol}" aria-label="Search symbol" />
+        <input class="symbol-search" value="${startingSymbol.symbol}" aria-label="Search Binance symbol" autocomplete="off" />
         <div class="symbol-menu"></div>
       </div>
       <div class="timeframe-buttons"></div>
-      <button class="control-button simulate-button" type="button" title="Generate a new demo pattern">⚡</button>
+      <button class="control-button refresh-button" type="button" title="Reload from Binance">↻</button>
     </div>
     <div class="chart-meta">
       <span class="ticker"></span>
@@ -84,7 +178,7 @@ function makeCard(card, index) {
     </div>
     <div class="chart-canvas-wrap">
       <canvas class="chart-canvas"></canvas>
-      <span class="chart-badge">SIMULATED</span>
+      <span class="chart-badge">CONNECTING</span>
       <span class="chart-status"></span>
     </div>
   `;
@@ -94,8 +188,10 @@ function makeCard(card, index) {
     index,
     symbolInfo: startingSymbol,
     timeframe: startingTf,
-    candles: generateCandles(startingSymbol, startingTf),
-    liveOffset: 0,
+    candles: [],
+    socket: null,
+    reconnectTimer: null,
+    loadingToken: 0,
     canvas: card.querySelector('.chart-canvas'),
     ctx: card.querySelector('.chart-canvas').getContext('2d'),
     input: card.querySelector('.symbol-search'),
@@ -115,10 +211,8 @@ function makeCard(card, index) {
     btn.type = 'button';
     btn.addEventListener('click', () => {
       state.timeframe = tf;
-      state.candles = generateCandles(state.symbolInfo, tf);
-      state.liveOffset = 0;
       [...state.buttons.children].forEach(b => b.classList.toggle('active', b.textContent === tf.label));
-      render(state);
+      refreshState(state);
     });
     state.buttons.appendChild(btn);
   });
@@ -132,12 +226,19 @@ function makeCard(card, index) {
     state.menu.classList.add('open');
   });
 
-  card.querySelector('.simulate-button').addEventListener('click', () => {
-    const bump = (Math.random() - .5) * state.symbolInfo.volatility * 5;
-    state.symbolInfo = { ...state.symbolInfo, base: Math.max(.01, state.symbolInfo.base + bump) };
-    state.candles = generateCandles(state.symbolInfo, state.timeframe);
-    render(state);
+  state.input.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const symbol = state.input.value.trim().toUpperCase();
+    if (!symbol) return;
+    const known = SYMBOLS.find(item => item.symbol === symbol);
+    state.symbolInfo = known || { symbol, name: 'Binance Spot Pair' };
+    state.input.value = symbol;
+    state.menu.classList.remove('open');
+    refreshState(state);
   });
+
+  card.querySelector('.refresh-button').addEventListener('click', () => refreshState(state));
 
   card.addEventListener('click', () => {
     document.querySelectorAll('.chart-card').forEach(el => el.classList.remove('active'));
@@ -146,6 +247,7 @@ function makeCard(card, index) {
 
   chartStates.push(state);
   render(state);
+  refreshState(state);
 }
 
 function fillMenu(state, list) {
@@ -158,10 +260,8 @@ function fillMenu(state, list) {
     btn.addEventListener('click', () => {
       state.symbolInfo = item;
       state.input.value = item.symbol;
-      state.candles = generateCandles(item, state.timeframe);
-      state.liveOffset = 0;
       state.menu.classList.remove('open');
-      render(state);
+      refreshState(state);
     });
     state.menu.appendChild(btn);
   });
@@ -188,7 +288,7 @@ function render(state) {
   const { width, height } = resizeCanvas(state);
   const ctx = state.ctx;
   const candles = state.candles;
-  const pad = { left: 12, right: 68, top: 16, bottom: 42 };
+  const pad = { left: 12, right: 78, top: 16, bottom: 42 };
   const volumeHeight = Math.max(52, height * .17);
   const priceBottom = height - pad.bottom - volumeHeight - 10;
   const plotWidth = width - pad.left - pad.right;
@@ -198,12 +298,26 @@ function render(state) {
   ctx.fillStyle = '#0d1425';
   ctx.fillRect(0, 0, width, height);
 
+  state.ticker.textContent = state.symbolInfo.symbol;
+  state.name.textContent = state.symbolInfo.name;
+
+  if (!candles.length) {
+    ctx.fillStyle = '#8796b4';
+    ctx.font = '14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Loading market data…', width / 2, height / 2);
+    ctx.textAlign = 'start';
+    state.price.textContent = '--';
+    state.change.textContent = '';
+    return;
+  }
+
   const minPrice = Math.min(...candles.map(c => c.low));
   const maxPrice = Math.max(...candles.map(c => c.high));
-  const priceSpan = Math.max(.0001, maxPrice - minPrice);
-  const maxVolume = Math.max(...candles.map(c => c.volume));
+  const priceSpan = Math.max(.00000001, maxPrice - minPrice);
+  const maxVolume = Math.max(...candles.map(c => c.volume), 1);
   const xStep = plotWidth / candles.length;
-  const candleWidth = Math.max(2, Math.min(9, xStep * .62));
+  const candleWidth = Math.max(1.5, Math.min(8, xStep * .68));
 
   ctx.lineWidth = 1;
   ctx.strokeStyle = '#25304a';
@@ -270,48 +384,14 @@ function render(state) {
   ctx.setLineDash([]);
 
   ctx.fillStyle = '#8796b4';
-  const labelIndexes = [0, Math.floor(candles.length / 2), candles.length - 1];
-  labelIndexes.forEach(idx => {
+  [0, Math.floor(candles.length / 2), candles.length - 1].forEach(idx => {
     const x = pad.left + idx * xStep;
     ctx.fillText(fmtTime(candles[idx].time, state.timeframe), x, height - 16);
   });
 
-  state.ticker.textContent = state.symbolInfo.symbol;
-  state.name.textContent = state.symbolInfo.name;
   state.price.textContent = fmtPrice(latest.close);
   state.change.textContent = `${change >= 0 ? '+' : ''}${fmtPrice(change)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
   state.change.className = `change ${change >= 0 ? 'positive' : 'negative'}`;
-  state.status.textContent = `${state.timeframe.label} • ${candles.length} bars • volume enabled`;
-}
-
-function tick(state) {
-  const candles = state.candles;
-  const last = candles[candles.length - 1];
-  const drift = (Math.random() - .48) * state.symbolInfo.volatility * .13;
-  const newClose = Math.max(.01, last.close + drift);
-  const updated = {
-    ...last,
-    close: newClose,
-    high: Math.max(last.high, newClose),
-    low: Math.min(last.low, newClose),
-    volume: last.volume + Math.round(20 + Math.random() * 80),
-  };
-  candles[candles.length - 1] = updated;
-
-  if (Math.random() > .82) {
-    const newTime = last.time + state.timeframe.seconds;
-    candles.push({
-      time: newTime,
-      open: newClose,
-      high: newClose + Math.random() * state.symbolInfo.volatility * .25,
-      low: Math.max(.01, newClose - Math.random() * state.symbolInfo.volatility * .25),
-      close: newClose,
-      volume: Math.round(220 + Math.random() * 900),
-    });
-    if (candles.length > 90) candles.shift();
-  }
-
-  render(state);
 }
 
 document.querySelectorAll('.chart-card').forEach(makeCard);
@@ -325,10 +405,7 @@ document.addEventListener('click', event => {
 window.addEventListener('resize', () => chartStates.forEach(render));
 
 document.getElementById('resetAll').addEventListener('click', () => {
-  chartStates.forEach(state => {
-    state.candles = generateCandles(state.symbolInfo, state.timeframe);
-    render(state);
-  });
+  chartStates.forEach(state => refreshState(state));
 });
 
-setInterval(() => chartStates.forEach(tick), 1800);
+window.addEventListener('beforeunload', () => chartStates.forEach(disconnectWebSocket));
