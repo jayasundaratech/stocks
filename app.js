@@ -48,7 +48,7 @@ function normalizeKline(row) {
 async function loadHistorical(state) {
   state.loadingToken += 1;
   const token = state.loadingToken;
-  setConnectionState(state, 'loading', 'Loading Binance data…');
+  setConnectionState(state, 'loading', 'Loading Binance candles…');
 
   const url = `${REST_BASE}?symbol=${encodeURIComponent(state.symbolInfo.symbol)}&interval=${encodeURIComponent(state.timeframe.label)}&limit=120`;
   const response = await fetch(url, { cache: 'no-store' });
@@ -77,13 +77,18 @@ function connectWebSocket(state) {
   const socket = new WebSocket(`${WS_BASE}/${stream}`);
   state.socket = socket;
 
+  setConnectionState(state, 'loading', 'Connecting to Binance WebSocket…');
+
   socket.addEventListener('open', () => {
     if (state.socket !== socket) return;
-    setConnectionState(state, 'live', 'LIVE • Binance WebSocket');
+    state.lastUpdateAt = Date.now();
+    setConnectionState(state, 'live', 'LIVE • waiting for next tick');
+    updateLiveMeta(state);
   });
 
   socket.addEventListener('message', event => {
     if (state.socket !== socket) return;
+
     try {
       const payload = JSON.parse(event.data);
       const k = payload.k;
@@ -106,7 +111,11 @@ function connectWebSocket(state) {
         state.candles[state.candles.length - 1] = candle;
       }
 
+      state.lastUpdateAt = Date.now();
+      state.tickCount += 1;
+      setConnectionState(state, 'live', 'LIVE • Binance WebSocket');
       render(state);
+      updateLiveMeta(state);
     } catch (error) {
       console.error('WebSocket parse error', error);
     }
@@ -119,7 +128,8 @@ function connectWebSocket(state) {
     state.reconnectTimer = setTimeout(() => connectWebSocket(state), 2500);
   });
 
-  socket.addEventListener('error', () => {
+  socket.addEventListener('error', error => {
+    console.error('Binance WebSocket error', error);
     if (state.socket !== socket) return;
     setConnectionState(state, 'offline', 'WebSocket error');
   });
@@ -128,6 +138,7 @@ function connectWebSocket(state) {
 function disconnectWebSocket(state) {
   clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
+
   if (state.socket) {
     const socket = state.socket;
     state.socket = null;
@@ -138,22 +149,46 @@ function disconnectWebSocket(state) {
 function setConnectionState(state, mode, text) {
   state.status.textContent = text;
   state.status.dataset.state = mode;
+
   const badge = state.card.querySelector('.chart-badge');
   badge.textContent = mode === 'live' ? 'BINANCE LIVE' : mode === 'loading' ? 'CONNECTING' : 'OFFLINE';
+  badge.dataset.state = mode;
+}
+
+function updateLiveMeta(state) {
+  if (!state.liveMeta) return;
+
+  if (!state.lastUpdateAt) {
+    state.liveMeta.textContent = 'No live tick received yet';
+    return;
+  }
+
+  const time = new Date(state.lastUpdateAt).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  state.liveMeta.textContent = `Last live update: ${time} • ticks: ${state.tickCount}`;
 }
 
 async function refreshState(state) {
   disconnectWebSocket(state);
   state.candles = [];
+  state.tickCount = 0;
+  state.lastUpdateAt = null;
+  updateLiveMeta(state);
   render(state);
+
   try {
     await loadHistorical(state);
   } catch (error) {
     console.error(error);
     setConnectionState(state, 'offline', error.message || 'Unable to load Binance data');
     state.price.textContent = '--';
-    state.change.textContent = 'Check symbol / network';
+    state.change.textContent = 'Unable to connect';
     state.change.className = 'change negative';
+    state.liveMeta.textContent = 'No live connection';
   }
 }
 
@@ -164,11 +199,11 @@ function makeCard(card, index) {
   card.innerHTML = `
     <div class="chart-toolbar">
       <div class="symbol-search-wrap">
-        <input class="symbol-search" value="${startingSymbol.symbol}" aria-label="Search Binance symbol" autocomplete="off" />
+        <input class="symbol-search" value="${startingSymbol.symbol}" aria-label="Search Binance crypto symbol" autocomplete="off" readonly />
         <div class="symbol-menu"></div>
       </div>
       <div class="timeframe-buttons"></div>
-      <button class="control-button refresh-button" type="button" title="Reload from Binance">↻</button>
+      <button class="control-button refresh-button" type="button" title="Reconnect to Binance">↻</button>
     </div>
     <div class="chart-meta">
       <span class="ticker"></span>
@@ -176,6 +211,7 @@ function makeCard(card, index) {
       <span class="price"></span>
       <span class="change"></span>
     </div>
+    <div class="live-meta"></div>
     <div class="chart-canvas-wrap">
       <canvas class="chart-canvas"></canvas>
       <span class="chart-badge">CONNECTING</span>
@@ -192,6 +228,8 @@ function makeCard(card, index) {
     socket: null,
     reconnectTimer: null,
     loadingToken: 0,
+    tickCount: 0,
+    lastUpdateAt: null,
     canvas: card.querySelector('.chart-canvas'),
     ctx: card.querySelector('.chart-canvas').getContext('2d'),
     input: card.querySelector('.symbol-search'),
@@ -201,6 +239,7 @@ function makeCard(card, index) {
     price: card.querySelector('.price'),
     change: card.querySelector('.change'),
     status: card.querySelector('.chart-status'),
+    liveMeta: card.querySelector('.live-meta'),
     buttons: card.querySelector('.timeframe-buttons'),
   };
 
@@ -219,24 +258,8 @@ function makeCard(card, index) {
 
   fillMenu(state, SYMBOLS);
 
+  state.input.addEventListener('click', () => state.menu.classList.toggle('open'));
   state.input.addEventListener('focus', () => state.menu.classList.add('open'));
-  state.input.addEventListener('input', () => {
-    const q = state.input.value.trim().toUpperCase();
-    fillMenu(state, SYMBOLS.filter(s => s.symbol.includes(q) || s.name.toUpperCase().includes(q)));
-    state.menu.classList.add('open');
-  });
-
-  state.input.addEventListener('keydown', event => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    const symbol = state.input.value.trim().toUpperCase();
-    if (!symbol) return;
-    const known = SYMBOLS.find(item => item.symbol === symbol);
-    state.symbolInfo = known || { symbol, name: 'Binance Spot Pair' };
-    state.input.value = symbol;
-    state.menu.classList.remove('open');
-    refreshState(state);
-  });
 
   card.querySelector('.refresh-button').addEventListener('click', () => refreshState(state));
 
@@ -246,23 +269,27 @@ function makeCard(card, index) {
   });
 
   chartStates.push(state);
+  updateLiveMeta(state);
   render(state);
   refreshState(state);
 }
 
 function fillMenu(state, list) {
   state.menu.innerHTML = '';
+
   list.forEach(item => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'symbol-item';
     btn.innerHTML = `<strong>${item.symbol}</strong><small>${item.name}</small>`;
+
     btn.addEventListener('click', () => {
       state.symbolInfo = item;
       state.input.value = item.symbol;
       state.menu.classList.remove('open');
       refreshState(state);
     });
+
     state.menu.appendChild(btn);
   });
 }
@@ -305,7 +332,7 @@ function render(state) {
     ctx.fillStyle = '#8796b4';
     ctx.font = '14px system-ui';
     ctx.textAlign = 'center';
-    ctx.fillText('Loading market data…', width / 2, height / 2);
+    ctx.fillText('Loading Binance market data…', width / 2, height / 2);
     ctx.textAlign = 'start';
     state.price.textContent = '--';
     state.change.textContent = '';
@@ -405,7 +432,9 @@ document.addEventListener('click', event => {
 window.addEventListener('resize', () => chartStates.forEach(render));
 
 document.getElementById('resetAll').addEventListener('click', () => {
-  chartStates.forEach(state => refreshState(state));
+  chartStates.forEach(refreshState);
 });
+
+setInterval(() => chartStates.forEach(updateLiveMeta), 1000);
 
 window.addEventListener('beforeunload', () => chartStates.forEach(disconnectWebSocket));
