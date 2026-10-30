@@ -1,3 +1,5 @@
+import { createChart, CrosshairMode } from 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm';
+
 const SYMBOLS = [
   { symbol: 'BTCUSDT', name: 'Bitcoin / USDT' },
   { symbol: 'ETHUSDT', name: 'Ethereum / USDT' },
@@ -8,18 +10,10 @@ const SYMBOLS = [
   { symbol: 'ADAUSDT', name: 'Cardano / USDT' },
 ];
 
-const TIMEFRAMES = [
-  { label: '1m', seconds: 60 },
-  { label: '5m', seconds: 300 },
-  { label: '15m', seconds: 900 },
-  { label: '1h', seconds: 3600 },
-  { label: '4h', seconds: 14400 },
-  { label: '1d', seconds: 86400 },
-];
-
+const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const REST_BASE = 'https://api.binance.com/api/v3/klines';
 const WS_BASE = 'wss://stream.binance.com:9443/ws';
-const chartStates = [];
+const states = [];
 
 function fmtPrice(value) {
   if (!Number.isFinite(value)) return '--';
@@ -28,13 +22,7 @@ function fmtPrice(value) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 8 });
 }
 
-function fmtTime(timestamp, timeframe) {
-  const date = new Date(timestamp * 1000);
-  if (timeframe.seconds >= 86400) return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
-function normalizeKline(row) {
+function normalize(row) {
   return {
     time: Math.floor(Number(row[0]) / 1000),
     open: Number(row[1]),
@@ -45,55 +33,60 @@ function normalizeKline(row) {
   };
 }
 
-async function loadHistorical(state) {
-  state.loadingToken += 1;
-  const token = state.loadingToken;
-  setConnectionState(state, 'loading', 'Loading Binance candles…');
-
-  const url = `${REST_BASE}?symbol=${encodeURIComponent(state.symbolInfo.symbol)}&interval=${encodeURIComponent(state.timeframe.label)}&limit=120`;
-  const response = await fetch(url, { cache: 'no-store' });
-
-  if (!response.ok) {
-    let detail = '';
-    try {
-      const body = await response.json();
-      detail = body?.msg ? `: ${body.msg}` : '';
-    } catch (_) {}
-    throw new Error(`Binance REST ${response.status}${detail}`);
-  }
-
-  const rows = await response.json();
-  if (token !== state.loadingToken) return;
-  if (!Array.isArray(rows) || !rows.length) throw new Error('No candle data returned');
-
-  state.candles = rows.map(normalizeKline);
-  render(state);
-  connectWebSocket(state);
+function setStatus(state, mode, text) {
+  state.status.textContent = text;
+  state.badge.textContent = mode === 'live' ? 'BINANCE LIVE' : mode === 'loading' ? 'CONNECTING' : 'OFFLINE';
+  state.badge.dataset.state = mode;
 }
 
-function connectWebSocket(state) {
-  disconnectWebSocket(state);
-  const stream = `${state.symbolInfo.symbol.toLowerCase()}@kline_${state.timeframe.label}`;
+function updateMeta(state) {
+  if (!state.lastUpdateAt) {
+    state.liveMeta.textContent = 'Waiting for live tick…';
+    return;
+  }
+  const time = new Date(state.lastUpdateAt).toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  state.liveMeta.textContent = `Last live update: ${time} • ticks: ${state.tickCount}`;
+}
+
+function updateHeader(state, latest) {
+  if (!latest) return;
+  const first = state.candles[0];
+  const change = first ? latest.close - first.close : 0;
+  const pct = first?.close ? (change / first.close) * 100 : 0;
+  state.price.textContent = fmtPrice(latest.close);
+  state.change.textContent = `${change >= 0 ? '+' : ''}${fmtPrice(change)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+  state.change.className = `change ${change >= 0 ? 'positive' : 'negative'}`;
+}
+
+function disconnect(state) {
+  clearTimeout(state.reconnectTimer);
+  if (state.socket) {
+    const old = state.socket;
+    state.socket = null;
+    try { old.close(); } catch (_) {}
+  }
+}
+
+function connect(state) {
+  disconnect(state);
+  const stream = `${state.symbolInfo.symbol.toLowerCase()}@kline_${state.timeframe}`;
   const socket = new WebSocket(`${WS_BASE}/${stream}`);
   state.socket = socket;
-
-  setConnectionState(state, 'loading', 'Connecting to Binance WebSocket…');
+  setStatus(state, 'loading', 'Connecting to Binance WebSocket…');
 
   socket.addEventListener('open', () => {
     if (state.socket !== socket) return;
-    state.lastUpdateAt = Date.now();
-    setConnectionState(state, 'live', 'LIVE • waiting for next tick');
-    updateLiveMeta(state);
+    setStatus(state, 'live', 'LIVE • drag to pan • wheel to zoom');
   });
 
   socket.addEventListener('message', event => {
     if (state.socket !== socket) return;
-
     try {
       const payload = JSON.parse(event.data);
       const k = payload.k;
       if (!k) return;
-
       const candle = {
         time: Math.floor(Number(k.t) / 1000),
         open: Number(k.o),
@@ -106,353 +99,208 @@ function connectWebSocket(state) {
       const last = state.candles[state.candles.length - 1];
       if (!last || candle.time > last.time) {
         state.candles.push(candle);
-        if (state.candles.length > 120) state.candles.shift();
+        if (state.candles.length > 500) state.candles.shift();
       } else if (candle.time === last.time) {
         state.candles[state.candles.length - 1] = candle;
       }
 
+      state.candleSeries.update(candle);
+      state.volumeSeries.update({
+        time: candle.time,
+        value: candle.volume,
+        color: candle.close >= candle.open ? 'rgba(24,185,129,.6)' : 'rgba(239,83,80,.6)'
+      });
       state.lastUpdateAt = Date.now();
       state.tickCount += 1;
-      setConnectionState(state, 'live', 'LIVE • Binance WebSocket');
-      render(state);
-      updateLiveMeta(state);
+      updateMeta(state);
+      updateHeader(state, candle);
     } catch (error) {
-      console.error('WebSocket parse error', error);
+      console.error(error);
     }
   });
 
   socket.addEventListener('close', () => {
     if (state.socket !== socket) return;
-    setConnectionState(state, 'offline', 'Disconnected • reconnecting…');
-    clearTimeout(state.reconnectTimer);
-    state.reconnectTimer = setTimeout(() => connectWebSocket(state), 2500);
+    setStatus(state, 'offline', 'Disconnected • reconnecting…');
+    state.reconnectTimer = setTimeout(() => connect(state), 2500);
   });
 
-  socket.addEventListener('error', error => {
-    console.error('Binance WebSocket error', error);
+  socket.addEventListener('error', () => {
     if (state.socket !== socket) return;
-    setConnectionState(state, 'offline', 'WebSocket error');
+    setStatus(state, 'offline', 'WebSocket error');
   });
 }
 
-function disconnectWebSocket(state) {
-  clearTimeout(state.reconnectTimer);
-  state.reconnectTimer = null;
-
-  if (state.socket) {
-    const socket = state.socket;
-    state.socket = null;
-    try { socket.close(); } catch (_) {}
-  }
-}
-
-function setConnectionState(state, mode, text) {
-  state.status.textContent = text;
-  state.status.dataset.state = mode;
-
-  const badge = state.card.querySelector('.chart-badge');
-  badge.textContent = mode === 'live' ? 'BINANCE LIVE' : mode === 'loading' ? 'CONNECTING' : 'OFFLINE';
-  badge.dataset.state = mode;
-}
-
-function updateLiveMeta(state) {
-  if (!state.liveMeta) return;
-
-  if (!state.lastUpdateAt) {
-    state.liveMeta.textContent = 'No live tick received yet';
-    return;
-  }
-
-  const time = new Date(state.lastUpdateAt).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  state.liveMeta.textContent = `Last live update: ${time} • ticks: ${state.tickCount}`;
-}
-
-async function refreshState(state) {
-  disconnectWebSocket(state);
-  state.candles = [];
+async function load(state, resetView = true) {
+  disconnect(state);
   state.tickCount = 0;
   state.lastUpdateAt = null;
-  updateLiveMeta(state);
-  render(state);
+  updateMeta(state);
+  setStatus(state, 'loading', 'Loading Binance candles…');
 
   try {
-    await loadHistorical(state);
+    const url = `${REST_BASE}?symbol=${state.symbolInfo.symbol}&interval=${state.timeframe}&limit=500`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Binance REST ${res.status}`);
+    const rows = await res.json();
+    state.candles = rows.map(normalize);
+
+    state.candleSeries.setData(state.candles.map(c => ({
+      time: c.time, open: c.open, high: c.high, low: c.low, close: c.close
+    })));
+    state.volumeSeries.setData(state.candles.map(c => ({
+      time: c.time,
+      value: c.volume,
+      color: c.close >= c.open ? 'rgba(24,185,129,.6)' : 'rgba(239,83,80,.6)'
+    })));
+
+    updateHeader(state, state.candles[state.candles.length - 1]);
+    if (resetView) state.chart.timeScale().fitContent();
+    connect(state);
   } catch (error) {
     console.error(error);
-    setConnectionState(state, 'offline', error.message || 'Unable to load Binance data');
-    state.price.textContent = '--';
-    state.change.textContent = 'Unable to connect';
-    state.change.className = 'change negative';
-    state.liveMeta.textContent = 'No live connection';
+    setStatus(state, 'offline', error.message || 'Unable to load Binance data');
   }
+}
+
+function fillMenu(state) {
+  state.menu.innerHTML = '';
+  SYMBOLS.forEach(item => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'symbol-item';
+    btn.innerHTML = `<strong>${item.symbol}</strong><small>${item.name}</small>`;
+    btn.addEventListener('click', () => {
+      state.symbolInfo = item;
+      state.input.value = item.symbol;
+      state.ticker.textContent = item.symbol;
+      state.name.textContent = item.name;
+      state.menu.classList.remove('open');
+      load(state, true);
+    });
+    state.menu.appendChild(btn);
+  });
 }
 
 function makeCard(card, index) {
-  const startingSymbol = SYMBOLS[index % SYMBOLS.length];
-  const startingTf = TIMEFRAMES[index === 0 ? 0 : index % 4];
+  const symbolInfo = SYMBOLS[index % SYMBOLS.length];
+  const timeframe = TIMEFRAMES[index === 0 ? 0 : index % 4];
 
   card.innerHTML = `
     <div class="chart-toolbar">
       <div class="symbol-search-wrap">
-        <input class="symbol-search" value="${startingSymbol.symbol}" aria-label="Search Binance crypto symbol" autocomplete="off" readonly />
+        <input class="symbol-search" value="${symbolInfo.symbol}" readonly aria-label="Select Binance crypto symbol" />
         <div class="symbol-menu"></div>
       </div>
       <div class="timeframe-buttons"></div>
-      <button class="control-button refresh-button" type="button" title="Reconnect to Binance">↻</button>
+      <button class="control-button reset-view" type="button" title="Reset chart view">⌂</button>
+      <button class="control-button reconnect" type="button" title="Reconnect to Binance">↻</button>
     </div>
     <div class="chart-meta">
-      <span class="ticker"></span>
-      <span class="name"></span>
-      <span class="price"></span>
+      <span class="ticker">${symbolInfo.symbol}</span>
+      <span class="name">${symbolInfo.name}</span>
+      <span class="price">--</span>
       <span class="change"></span>
     </div>
     <div class="live-meta"></div>
     <div class="chart-canvas-wrap">
-      <canvas class="chart-canvas"></canvas>
+      <div class="chart-host"></div>
       <span class="chart-badge">CONNECTING</span>
       <span class="chart-status"></span>
     </div>
   `;
 
+  const host = card.querySelector('.chart-host');
+  const chart = createChart(host, {
+    width: host.clientWidth,
+    height: host.clientHeight,
+    layout: { background: { color: '#0d1425' }, textColor: '#91a0bd' },
+    grid: { vertLines: { color: '#25304a' }, horzLines: { color: '#25304a' } },
+    crosshair: { mode: CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#26324d', scaleMargins: { top: 0.08, bottom: 0.22 } },
+    timeScale: { borderColor: '#26324d', timeVisible: true, secondsVisible: false, rightOffset: 6 },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+    handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: '#18b981', downColor: '#ef5350', borderVisible: false,
+    wickUpColor: '#18b981', wickDownColor: '#ef5350',
+    priceLineVisible: true, lastValueVisible: true,
+  });
+
+  const volumeSeries = chart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: '',
+    scaleMargins: { top: 0.82, bottom: 0 },
+  });
+
   const state = {
-    card,
-    index,
-    symbolInfo: startingSymbol,
-    timeframe: startingTf,
-    candles: [],
-    socket: null,
-    reconnectTimer: null,
-    loadingToken: 0,
-    tickCount: 0,
-    lastUpdateAt: null,
-    canvas: card.querySelector('.chart-canvas'),
-    ctx: card.querySelector('.chart-canvas').getContext('2d'),
+    card, chart, host, candleSeries, volumeSeries,
+    symbolInfo, timeframe, candles: [], socket: null, reconnectTimer: null,
+    tickCount: 0, lastUpdateAt: null,
     input: card.querySelector('.symbol-search'),
     menu: card.querySelector('.symbol-menu'),
     ticker: card.querySelector('.ticker'),
     name: card.querySelector('.name'),
     price: card.querySelector('.price'),
     change: card.querySelector('.change'),
-    status: card.querySelector('.chart-status'),
     liveMeta: card.querySelector('.live-meta'),
+    badge: card.querySelector('.chart-badge'),
+    status: card.querySelector('.chart-status'),
     buttons: card.querySelector('.timeframe-buttons'),
   };
 
   TIMEFRAMES.forEach(tf => {
     const btn = document.createElement('button');
-    btn.className = `control-button ${tf.label === startingTf.label ? 'active' : ''}`;
-    btn.textContent = tf.label;
     btn.type = 'button';
+    btn.className = `control-button ${tf === timeframe ? 'active' : ''}`;
+    btn.textContent = tf;
     btn.addEventListener('click', () => {
       state.timeframe = tf;
-      [...state.buttons.children].forEach(b => b.classList.toggle('active', b.textContent === tf.label));
-      refreshState(state);
+      [...state.buttons.children].forEach(b => b.classList.toggle('active', b.textContent === tf));
+      load(state, true);
     });
     state.buttons.appendChild(btn);
   });
 
-  fillMenu(state, SYMBOLS);
-
+  fillMenu(state);
   state.input.addEventListener('click', () => state.menu.classList.toggle('open'));
-  state.input.addEventListener('focus', () => state.menu.classList.add('open'));
-
-  card.querySelector('.refresh-button').addEventListener('click', () => refreshState(state));
+  card.querySelector('.reset-view').addEventListener('click', () => chart.timeScale().fitContent());
+  card.querySelector('.reconnect').addEventListener('click', () => load(state, false));
 
   card.addEventListener('click', () => {
     document.querySelectorAll('.chart-card').forEach(el => el.classList.remove('active'));
     card.classList.add('active');
   });
 
-  chartStates.push(state);
-  updateLiveMeta(state);
-  render(state);
-  refreshState(state);
-}
-
-function fillMenu(state, list) {
-  state.menu.innerHTML = '';
-
-  list.forEach(item => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'symbol-item';
-    btn.innerHTML = `<strong>${item.symbol}</strong><small>${item.name}</small>`;
-
-    btn.addEventListener('click', () => {
-      state.symbolInfo = item;
-      state.input.value = item.symbol;
-      state.menu.classList.remove('open');
-      refreshState(state);
-    });
-
-    state.menu.appendChild(btn);
+  const observer = new ResizeObserver(entries => {
+    const rect = entries[0].contentRect;
+    chart.applyOptions({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
   });
-}
+  observer.observe(host);
+  state.observer = observer;
 
-function resizeCanvas(state) {
-  const rect = state.canvas.getBoundingClientRect();
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const width = Math.max(320, Math.floor(rect.width));
-  const height = Math.max(260, Math.floor(rect.height));
-  const targetW = Math.floor(width * dpr);
-  const targetH = Math.floor(height * dpr);
-
-  if (state.canvas.width !== targetW || state.canvas.height !== targetH) {
-    state.canvas.width = targetW;
-    state.canvas.height = targetH;
-  }
-
-  state.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return { width, height };
-}
-
-function render(state) {
-  const { width, height } = resizeCanvas(state);
-  const ctx = state.ctx;
-  const candles = state.candles;
-  const pad = { left: 12, right: 88, top: 16, bottom: 42 };
-  const volumeHeight = Math.max(52, height * .17);
-  const priceBottom = height - pad.bottom - volumeHeight - 10;
-  const plotWidth = width - pad.left - pad.right;
-  const priceHeight = priceBottom - pad.top;
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#0d1425';
-  ctx.fillRect(0, 0, width, height);
-
-  state.ticker.textContent = state.symbolInfo.symbol;
-  state.name.textContent = state.symbolInfo.name;
-
-  if (!candles.length) {
-    ctx.fillStyle = '#8796b4';
-    ctx.font = '14px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText('Loading Binance market data…', width / 2, height / 2);
-    ctx.textAlign = 'start';
-    state.price.textContent = '--';
-    state.change.textContent = '';
-    return;
-  }
-
-  const minPrice = Math.min(...candles.map(c => c.low));
-  const maxPrice = Math.max(...candles.map(c => c.high));
-  const priceSpan = Math.max(.00000001, maxPrice - minPrice);
-  const maxVolume = Math.max(...candles.map(c => c.volume), 1);
-  const xStep = plotWidth / candles.length;
-  const candleWidth = Math.max(1.5, Math.min(8, xStep * .68));
-
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = '#25304a';
-  ctx.fillStyle = '#8796b4';
-  ctx.font = '11px system-ui';
-
-  for (let i = 0; i <= 5; i++) {
-    const y = pad.top + (priceHeight / 5) * i;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(width - pad.right, y);
-    ctx.stroke();
-    const price = maxPrice - (priceSpan / 5) * i;
-    ctx.fillText(fmtPrice(price), width - pad.right + 7, y + 4);
-  }
-
-  for (let i = 0; i <= 5; i++) {
-    const x = pad.left + (plotWidth / 5) * i;
-    ctx.beginPath();
-    ctx.moveTo(x, pad.top);
-    ctx.lineTo(x, height - pad.bottom);
-    ctx.stroke();
-  }
-
-  candles.forEach((candle, i) => {
-    const x = pad.left + i * xStep + xStep / 2;
-    const toY = value => pad.top + ((maxPrice - value) / priceSpan) * priceHeight;
-    const openY = toY(candle.open);
-    const closeY = toY(candle.close);
-    const highY = toY(candle.high);
-    const lowY = toY(candle.low);
-    const up = candle.close >= candle.open;
-    const color = up ? '#18b981' : '#ef5350';
-
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x, highY);
-    ctx.lineTo(x, lowY);
-    ctx.stroke();
-
-    const bodyTop = Math.min(openY, closeY);
-    const bodyHeight = Math.max(1.5, Math.abs(closeY - openY));
-    ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
-
-    const volH = (candle.volume / maxVolume) * volumeHeight;
-    ctx.globalAlpha = .72;
-    ctx.fillRect(x - candleWidth / 2, height - pad.bottom - volH, candleWidth, volH);
-    ctx.globalAlpha = 1;
-  });
-
-  const latest = candles[candles.length - 1];
-  const first = candles[0];
-  const change = latest.close - first.close;
-  const pct = first.close ? change / first.close * 100 : 0;
-  const latestY = pad.top + ((maxPrice - latest.close) / priceSpan) * priceHeight;
-  const liveColor = latest.close >= latest.open ? '#18b981' : '#ef5350';
-
-  ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = liveColor;
-  ctx.beginPath();
-  ctx.moveTo(pad.left, latestY);
-  ctx.lineTo(width - pad.right + 2, latestY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const livePriceText = fmtPrice(latest.close);
-  ctx.font = 'bold 11px system-ui';
-  const labelWidth = Math.min(pad.right - 8, Math.max(58, ctx.measureText(livePriceText).width + 14));
-  const labelHeight = 22;
-  const labelX = width - labelWidth - 4;
-  const labelY = Math.max(pad.top, Math.min(priceBottom - labelHeight, latestY - labelHeight / 2));
-
-  ctx.fillStyle = liveColor;
-  ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(livePriceText, labelX + labelWidth / 2, labelY + labelHeight / 2);
-  ctx.textAlign = 'start';
-  ctx.textBaseline = 'alphabetic';
-
-  ctx.fillStyle = '#8796b4';
-  ctx.font = '11px system-ui';
-  [0, Math.floor(candles.length / 2), candles.length - 1].forEach(idx => {
-    const x = pad.left + idx * xStep;
-    ctx.fillText(fmtTime(candles[idx].time, state.timeframe), x, height - 16);
-  });
-
-  state.price.textContent = fmtPrice(latest.close);
-  state.change.textContent = `${change >= 0 ? '+' : ''}${fmtPrice(change)} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
-  state.change.className = `change ${change >= 0 ? 'positive' : 'negative'}`;
+  states.push(state);
+  updateMeta(state);
+  load(state, true);
 }
 
 document.querySelectorAll('.chart-card').forEach(makeCard);
 
 document.addEventListener('click', event => {
-  chartStates.forEach(state => {
+  states.forEach(state => {
     if (!state.card.contains(event.target)) state.menu.classList.remove('open');
   });
 });
 
-window.addEventListener('resize', () => chartStates.forEach(render));
-
 document.getElementById('resetAll').addEventListener('click', () => {
-  chartStates.forEach(refreshState);
+  states.forEach(state => state.chart.timeScale().fitContent());
 });
 
-setInterval(() => chartStates.forEach(updateLiveMeta), 1000);
-
-window.addEventListener('beforeunload', () => chartStates.forEach(disconnectWebSocket));
+setInterval(() => states.forEach(updateMeta), 1000);
+window.addEventListener('beforeunload', () => states.forEach(state => {
+  disconnect(state);
+  state.observer?.disconnect();
+  state.chart?.remove();
+}));
