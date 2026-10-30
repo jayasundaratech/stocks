@@ -315,7 +315,7 @@ function render(state) {
   const { width, height } = resizeCanvas(state);
   const ctx = state.ctx;
   const candles = state.candles;
-  const pad = { left: 12, right: 78, top: 16, bottom: 42 };
+  const pad = { left: 12, right: 88, top: 16, bottom: 42 };
   const volumeHeight = Math.max(52, height * .17);
   const priceBottom = height - pad.bottom - volumeHeight - 10;
   const plotWidth = width - pad.left - pad.right;
@@ -401,16 +401,34 @@ function render(state) {
   const change = latest.close - first.close;
   const pct = first.close ? change / first.close * 100 : 0;
   const latestY = pad.top + ((maxPrice - latest.close) / priceSpan) * priceHeight;
+  const liveColor = latest.close >= latest.open ? '#18b981' : '#ef5350';
 
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = latest.close >= first.close ? '#18b981' : '#ef5350';
+  ctx.strokeStyle = liveColor;
   ctx.beginPath();
   ctx.moveTo(pad.left, latestY);
-  ctx.lineTo(width - pad.right, latestY);
+  ctx.lineTo(width - pad.right + 2, latestY);
   ctx.stroke();
   ctx.setLineDash([]);
 
+  const livePriceText = fmtPrice(latest.close);
+  ctx.font = 'bold 11px system-ui';
+  const labelWidth = Math.min(pad.right - 8, Math.max(58, ctx.measureText(livePriceText).width + 14));
+  const labelHeight = 22;
+  const labelX = width - labelWidth - 4;
+  const labelY = Math.max(pad.top, Math.min(priceBottom - labelHeight, latestY - labelHeight / 2));
+
+  ctx.fillStyle = liveColor;
+  ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(livePriceText, labelX + labelWidth / 2, labelY + labelHeight / 2);
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+
   ctx.fillStyle = '#8796b4';
+  ctx.font = '11px system-ui';
   [0, Math.floor(candles.length / 2), candles.length - 1].forEach(idx => {
     const x = pad.left + idx * xStep;
     ctx.fillText(fmtTime(candles[idx].time, state.timeframe), x, height - 16);
