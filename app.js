@@ -78,7 +78,7 @@ function connect(state) {
 
   socket.addEventListener('open', () => {
     if (state.socket !== socket) return;
-    setStatus(state, 'live', 'LIVE • drag to pan • wheel to zoom');
+    setStatus(state, 'live', 'LIVE • drag chart to pan • drag price axis to scale');
   });
 
   socket.addEventListener('message', event => {
@@ -131,7 +131,15 @@ function connect(state) {
   });
 }
 
-async function load(state, resetView = true) {
+function resetView(state) {
+  state.chart.timeScale().fitContent();
+  state.candleSeries.priceScale().applyOptions({
+    autoScale: true,
+    scaleMargins: { top: 0.08, bottom: 0.22 },
+  });
+}
+
+async function load(state, reset = true) {
   disconnect(state);
   state.tickCount = 0;
   state.lastUpdateAt = null;
@@ -155,7 +163,7 @@ async function load(state, resetView = true) {
     })));
 
     updateHeader(state, state.candles[state.candles.length - 1]);
-    if (resetView) state.chart.timeScale().fitContent();
+    if (reset) resetView(state);
     connect(state);
   } catch (error) {
     console.error(error);
@@ -193,7 +201,7 @@ function makeCard(card, index) {
         <div class="symbol-menu"></div>
       </div>
       <div class="timeframe-buttons"></div>
-      <button class="control-button reset-view" type="button" title="Reset chart view">⌂</button>
+      <button class="control-button reset-view" type="button" title="Reset time and price scale">⌂</button>
       <button class="control-button reconnect" type="button" title="Reconnect to Binance">↻</button>
     </div>
     <div class="chart-meta">
@@ -217,16 +225,37 @@ function makeCard(card, index) {
     layout: { background: { color: '#0d1425' }, textColor: '#91a0bd' },
     grid: { vertLines: { color: '#25304a' }, horzLines: { color: '#25304a' } },
     crosshair: { mode: CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#26324d', scaleMargins: { top: 0.08, bottom: 0.22 } },
+    rightPriceScale: {
+      visible: true,
+      borderVisible: true,
+      borderColor: '#26324d',
+      scaleMargins: { top: 0.08, bottom: 0.22 },
+      minimumWidth: 72,
+    },
     timeScale: { borderColor: '#26324d', timeVisible: true, secondsVisible: false, rightOffset: 6 },
-    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
-    handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+    handleScroll: {
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: true,
+    },
+    handleScale: {
+      axisPressedMouseMove: { time: true, price: true },
+      axisDoubleClickReset: { time: true, price: true },
+      mouseWheel: true,
+      pinch: true,
+    },
   });
 
   const candleSeries = chart.addCandlestickSeries({
     upColor: '#18b981', downColor: '#ef5350', borderVisible: false,
     wickUpColor: '#18b981', wickDownColor: '#ef5350',
     priceLineVisible: true, lastValueVisible: true,
+  });
+
+  candleSeries.priceScale().applyOptions({
+    autoScale: true,
+    scaleMargins: { top: 0.08, bottom: 0.22 },
   });
 
   const volumeSeries = chart.addHistogramSeries({
@@ -266,7 +295,7 @@ function makeCard(card, index) {
 
   fillMenu(state);
   state.input.addEventListener('click', () => state.menu.classList.toggle('open'));
-  card.querySelector('.reset-view').addEventListener('click', () => chart.timeScale().fitContent());
+  card.querySelector('.reset-view').addEventListener('click', () => resetView(state));
   card.querySelector('.reconnect').addEventListener('click', () => load(state, false));
 
   card.addEventListener('click', () => {
@@ -295,7 +324,7 @@ document.addEventListener('click', event => {
 });
 
 document.getElementById('resetAll').addEventListener('click', () => {
-  states.forEach(state => state.chart.timeScale().fitContent());
+  states.forEach(resetView);
 });
 
 setInterval(() => states.forEach(updateMeta), 1000);
