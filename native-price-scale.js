@@ -15,14 +15,17 @@
     installed.add(card);
 
     // Remove the custom transparent price-axis overlay so the actual
-    // Lightweight Charts price axis receives the mouse/pointer events.
+    // Lightweight Charts price axis receives the pointer events.
     card.querySelectorAll('.price-axis-control').forEach(node => node.remove());
 
-    try {
-      // Restore normal series autoscaling. The PRICE SCALE itself is what
-      // should be manually resized, not only the candlestick series.
-      record.candleSeries.applyOptions({ autoscaleInfoProvider: undefined });
-    } catch (_) {}
+    const restoreNormalSeriesAutoscale = () => {
+      try {
+        record.candleSeries.applyOptions({
+          autoscaleInfoProvider: original => original(),
+        });
+      } catch (_) {}
+    };
+    restoreNormalSeriesAutoscale();
 
     try {
       record.chart.applyOptions({
@@ -37,9 +40,9 @@
 
     const scale = record.chart.priceScale('right');
 
-    // Let the current fitted range render first, then freeze it. From this
-    // point the native right-axis drag changes the whole price scale exactly
-    // like TradingView (candles + EMA/BB/VWAP together).
+    // Render a normal fitted range first, then switch the whole right scale
+    // to manual mode. Native right-axis dragging now changes every series on
+    // that scale together: candles, EMA, Bollinger Bands and VWAP.
     const freezeManualScale = () => {
       try {
         scale.applyOptions({
@@ -53,26 +56,31 @@
     setTimeout(freezeManualScale, 150);
     setTimeout(freezeManualScale, 750);
 
-    // app-v4 can turn autoscale back on after symbol/timeframe reloads.
-    // Re-freeze only when it has been re-enabled; this does not overwrite
-    // the user's manual scale while it is already off.
+    // app-v4 can recreate the custom axis / provider or re-enable autoscale
+    // after symbol/timeframe changes. Remove/revert only those items; never
+    // touch the user's manual range while autoScale is already false.
     const guard = setInterval(() => {
       if (!document.documentElement.contains(card)) {
         clearInterval(guard);
         return;
       }
+      card.querySelectorAll('.price-axis-control').forEach(node => node.remove());
       try {
         const opts = scale.options?.();
-        if (opts?.autoScale) freezeManualScale();
+        if (opts?.autoScale) {
+          restoreNormalSeriesAutoscale();
+          freezeManualScale();
+        }
       } catch (_) {}
-      card.querySelectorAll('.price-axis-control').forEach(node => node.remove());
     }, 400);
 
-    // Double-clicking the real price scale is handled natively by LWC.
-    // After reset it may re-enable autoscale, so freeze the freshly reset
-    // range shortly afterward without changing the user's horizontal range.
     card.addEventListener('dblclick', () => {
-      setTimeout(freezeManualScale, 80);
+      // Native double-click resets the price scale. Re-freeze the freshly
+      // reset scale shortly after so subsequent drags stay fully manual.
+      setTimeout(() => {
+        restoreNormalSeriesAutoscale();
+        freezeManualScale();
+      }, 80);
     }, true);
 
     card.__nativePriceScaleGuard = guard;
