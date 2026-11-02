@@ -7,6 +7,23 @@
     return (window.__stockChartRecords || []).find(record => record.container === host) || null;
   }
 
+  function stripLegacyZoomText(card) {
+    const meta = card.querySelector('.live-meta');
+    if (!meta) return;
+    const clean = () => {
+      const current = meta.textContent || '';
+      const next = current
+        .replace(/\s*•\s*Price zoom\s+[0-9.]+×/g, '')
+        .replace(/Price zoom\s+[0-9.]+×\s*•\s*/g, '')
+        .trim();
+      if (next !== current) meta.textContent = next;
+    };
+    clean();
+    const observer = new MutationObserver(clean);
+    observer.observe(meta, { childList: true, characterData: true, subtree: true });
+    card.__priceMetaObserver = observer;
+  }
+
   function enableNativePriceScale(card) {
     const record = findRecord(card);
     if (!record?.chart || !record?.candleSeries) return false;
@@ -14,76 +31,50 @@
 
     installed.add(card);
 
-    // Remove the custom transparent price-axis overlay so the actual
-    // Lightweight Charts price axis receives the pointer events.
+    // The old app placed a transparent element over the real right price
+    // axis. Remove it so Lightweight Charts receives the pointer events.
     card.querySelectorAll('.price-axis-control').forEach(node => node.remove());
 
-    const restoreNormalSeriesAutoscale = () => {
-      try {
-        record.candleSeries.applyOptions({
-          autoscaleInfoProvider: original => original(),
-        });
-      } catch (_) {}
+    // app-v4 re-applies its old candle-only autoscale provider on loads/resets.
+    // Neutralize only that legacy provider. All future series options are kept.
+    const nativeApplySeriesOptions = record.candleSeries.applyOptions.bind(record.candleSeries);
+    record.candleSeries.applyOptions = options => {
+      if (options && Object.prototype.hasOwnProperty.call(options, 'autoscaleInfoProvider')) {
+        options = { ...options, autoscaleInfoProvider: null };
+      }
+      return nativeApplySeriesOptions(options);
     };
-    restoreNormalSeriesAutoscale();
+    nativeApplySeriesOptions({ autoscaleInfoProvider: null });
 
-    try {
-      record.chart.applyOptions({
-        handleScale: {
-          mouseWheel: true,
-          pinch: true,
-          axisPressedMouseMove: { time: true, price: true },
-          axisDoubleClickReset: { time: true, price: true },
-        },
-      });
-    } catch (_) {}
+    // Enable the library's native price-axis interaction. IMPORTANT: keep
+    // autoscale enabled initially. Lightweight Charts itself leaves autoscale
+    // when the user starts dragging the price axis; forcing autoScale=false
+    // beforehand is what broke the interaction in the previous build.
+    record.chart.applyOptions({
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: { time: true, price: true },
+        axisDoubleClickReset: { time: true, price: true },
+      },
+    });
 
     const scale = record.chart.priceScale('right');
+    scale.applyOptions({
+      autoScale: true,
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+    });
 
-    // Render a normal fitted range first, then switch the whole right scale
-    // to manual mode. Native right-axis dragging now changes every series on
-    // that scale together: candles, EMA, Bollinger Bands and VWAP.
-    const freezeManualScale = () => {
-      try {
-        scale.applyOptions({
-          autoScale: false,
-          scaleMargins: { top: 0.08, bottom: 0.08 },
-        });
-      } catch (_) {}
-    };
+    stripLegacyZoomText(card);
 
-    requestAnimationFrame(() => requestAnimationFrame(freezeManualScale));
-    setTimeout(freezeManualScale, 150);
-    setTimeout(freezeManualScale, 750);
-
-    // app-v4 can recreate the custom axis / provider or re-enable autoscale
-    // after symbol/timeframe changes. Remove/revert only those items; never
-    // touch the user's manual range while autoScale is already false.
-    const guard = setInterval(() => {
-      if (!document.documentElement.contains(card)) {
-        clearInterval(guard);
-        return;
-      }
+    // Do not force manual mode and do not poll/re-write the scale. We only
+    // keep removing the legacy overlay in case app-v4 recreates the card.
+    const observer = new MutationObserver(() => {
       card.querySelectorAll('.price-axis-control').forEach(node => node.remove());
-      try {
-        const opts = scale.options?.();
-        if (opts?.autoScale) {
-          restoreNormalSeriesAutoscale();
-          freezeManualScale();
-        }
-      } catch (_) {}
-    }, 400);
+    });
+    observer.observe(card, { childList: true, subtree: true });
+    card.__nativePriceScaleObserver = observer;
 
-    card.addEventListener('dblclick', () => {
-      // Native double-click resets the price scale. Re-freeze the freshly
-      // reset scale shortly after so subsequent drags stay fully manual.
-      setTimeout(() => {
-        restoreNormalSeriesAutoscale();
-        freezeManualScale();
-      }, 80);
-    }, true);
-
-    card.__nativePriceScaleGuard = guard;
     return true;
   }
 
@@ -95,8 +86,8 @@
     if (pending) requestAnimationFrame(installAll);
   }
 
-  const observer = new MutationObserver(installAll);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  const rootObserver = new MutationObserver(installAll);
+  rootObserver.observe(document.documentElement, { childList: true, subtree: true });
   installAll();
 
   window.__nativePriceScale = { installAll };
