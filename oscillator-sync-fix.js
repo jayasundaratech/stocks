@@ -1,9 +1,11 @@
 const mainRecords = () => Array.isArray(window.__stockChartRecords) ? window.__stockChartRecords : [];
 const oscRecords = () => Array.isArray(window.__oscillatorChartRecords) ? window.__oscillatorChartRecords : [];
 
-const nearlyEqual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.5;
+function nearlyEqual(a, b) {
+  return Math.abs(Number(a) - Number(b)) < 0.0001;
+}
 
-function sameRange(a, b) {
+function sameLogicalRange(a, b) {
   if (!a || !b) return false;
   return nearlyEqual(a.from, b.from) && nearlyEqual(a.to, b.to);
 }
@@ -13,58 +15,92 @@ function recordsForCard(card) {
   const main = mainRecords().find(record => record.container === mainHost) || null;
   const hosts = [...card.querySelectorAll('.osc-chart-host')];
   const lower = hosts.map(host => oscRecords().find(record => record.container === host)).filter(Boolean);
-  return { main, lower };
+  return { main, lower, all: [main, ...lower].filter(Boolean) };
 }
 
-function exactSync(set) {
-  if (!set.main || set.lower.length < 2 || set.syncing) return;
-  const range = set.main.chart.timeScale().getVisibleRange?.();
-  if (!range) return;
+function broadcastLogicalRange(set, source, range) {
+  if (!range || set.syncing) return;
   set.syncing = true;
   try {
-    for (const record of set.lower) {
+    for (const record of set.all) {
+      if (record === source) continue;
       const scale = record.chart.timeScale();
-      const current = scale.getVisibleRange?.();
-      if (!sameRange(current, range)) scale.setVisibleRange(range);
+      const current = scale.getVisibleLogicalRange?.();
+      if (!sameLogicalRange(current, range)) {
+        scale.setVisibleLogicalRange({ from: range.from, to: range.to });
+      }
     }
-  } catch (_) {
+  } catch (error) {
+    console.warn('Oscillator range sync failed', error);
   } finally {
-    set.syncing = false;
+    requestAnimationFrame(() => { set.syncing = false; });
   }
 }
 
-function configureAxes(set) {
+function configureChartInteractions(set) {
   if (!set.main) return;
-  try { set.main.chart.timeScale().applyOptions({ visible: false }); } catch (_) {}
+
+  try {
+    set.main.chart.timeScale().applyOptions({ visible: false, rightOffset: 6 });
+  } catch (_) {}
+
   set.lower.forEach((record, index) => {
-    try { record.chart.priceScale('right').applyOptions({ minimumWidth: 86 }); } catch (_) {}
-    try { record.chart.timeScale().applyOptions({ visible: index === set.lower.length - 1 }); } catch (_) {}
+    try {
+      record.chart.priceScale('right').applyOptions({ minimumWidth: 86 });
+      record.chart.timeScale().applyOptions({
+        visible: index === set.lower.length - 1,
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 6,
+      });
+      record.chart.applyOptions({
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        },
+        handleScale: {
+          mouseWheel: true,
+          pinch: true,
+          axisPressedMouseMove: { time: true, price: false },
+          axisDoubleClickReset: { time: true, price: false },
+        },
+      });
+    } catch (_) {}
   });
 }
 
 function installCard(card) {
-  if (card.__exactOscSyncInstalled) return true;
+  if (card.__exactOscSyncInstalledV3) return true;
   const set = recordsForCard(card);
   if (!set.main || set.lower.length < 2) return false;
-  card.__exactOscSyncInstalled = true;
+
+  card.__exactOscSyncInstalledV3 = true;
   set.syncing = false;
-  card.__oscSyncSet = set;
-  configureAxes(set);
+  card.__oscSyncSetV3 = set;
+  configureChartInteractions(set);
 
-  const sync = () => requestAnimationFrame(() => exactSync(set));
-  const mainScale = set.main.chart.timeScale();
-  if (mainScale.subscribeVisibleTimeRangeChange) mainScale.subscribeVisibleTimeRangeChange(sync);
-  if (mainScale.subscribeVisibleLogicalRangeChange) mainScale.subscribeVisibleLogicalRangeChange(sync);
-
-  for (const record of set.lower) {
+  for (const record of set.all) {
     const scale = record.chart.timeScale();
-    if (scale.subscribeVisibleTimeRangeChange) scale.subscribeVisibleTimeRangeChange(sync);
-    if (scale.subscribeVisibleLogicalRangeChange) scale.subscribeVisibleLogicalRangeChange(sync);
+    scale.subscribeVisibleLogicalRangeChange(range => {
+      if (!range || set.syncing) return;
+      broadcastLogicalRange(set, record, range);
+    });
   }
 
-  exactSync(set);
-  setTimeout(() => exactSync(set), 250);
-  setTimeout(() => exactSync(set), 1000);
+  const initial = set.main.chart.timeScale().getVisibleLogicalRange?.();
+  if (initial) broadcastLogicalRange(set, set.main, initial);
+
+  setTimeout(() => {
+    const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
+    if (range) broadcastLogicalRange(set, set.main, range);
+  }, 250);
+  setTimeout(() => {
+    const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
+    if (range) broadcastLogicalRange(set, set.main, range);
+  }, 1000);
+
   return true;
 }
 
@@ -80,7 +116,9 @@ installAll();
 
 setInterval(() => {
   document.querySelectorAll('.chart-card').forEach(card => {
-    const set = card.__oscSyncSet;
-    if (set) exactSync(set);
+    const set = card.__oscSyncSetV3;
+    if (!set || set.syncing) return;
+    const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
+    if (range) broadcastLogicalRange(set, set.main, range);
   });
-}, 750);
+}, 1000);
