@@ -1,11 +1,17 @@
-import * as LWC from 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm?stocks-wrapper=1';
+import * as LWC from 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm?stocks-wrapper=2';
 
 export const CrosshairMode = LWC.CrosshairMode;
 export const LineStyle = LWC.LineStyle;
 
 export function createChart(container, options) {
   const chart = LWC.createChart(container, options);
-  const record = { chart, container, candleSeries: null, volumeSeries: null };
+  const record = {
+    chart,
+    container,
+    candleSeries: null,
+    volumeSeries: null,
+    lineSeries: [],
+  };
 
   const originalAddCandlestickSeries = chart.addCandlestickSeries.bind(chart);
   chart.addCandlestickSeries = (...args) => {
@@ -18,6 +24,13 @@ export function createChart(container, options) {
   chart.addHistogramSeries = (...args) => {
     const series = originalAddHistogramSeries(...args);
     if (!record.volumeSeries) record.volumeSeries = series;
+    return series;
+  };
+
+  const originalAddLineSeries = chart.addLineSeries.bind(chart);
+  chart.addLineSeries = (...args) => {
+    const series = originalAddLineSeries(...args);
+    record.lineSeries.push(series);
     return series;
   };
 
