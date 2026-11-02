@@ -1,13 +1,15 @@
 (() => {
   'use strict';
 
-  const HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+  const HISTORY_CONFIG = window.__STOCKS_HISTORY_CONFIG || {};
+  const HISTORY_DAYS = Math.max(1, Number(HISTORY_CONFIG.days) || 7);
+  const HISTORY_WINDOW_MS = Number(HISTORY_CONFIG.windowMs) || HISTORY_DAYS * 24 * 60 * 60 * 1000;
   const PAGE_LIMIT = 1000;
-  const MAX_PAGES = 24;
+  const MAX_PAGES = Math.max(1, Number(HISTORY_CONFIG.maxPages) || 24);
   const DB_NAME = 'stocks-history-v1';
   const DB_VERSION = 1;
   const STORE_NAME = 'series';
-  const CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+  const CACHE_MAX_AGE_MS = Number(HISTORY_CONFIG.cacheMaxAgeMs) || 14 * 24 * 60 * 60 * 1000;
   const INTERVAL_MS = Object.freeze({
     '1m': 60_000,
     '5m': 5 * 60_000,
@@ -81,7 +83,7 @@
     return dedupeAndPruneRows(groups.flat(), Date.now());
   }
 
-  class SevenDayCandleArray extends Array {
+  class RollingHistoryCandleArray extends Array {
     static get [Symbol.species]() { return Array; }
 
     push(...items) {
@@ -100,19 +102,19 @@
     }
   }
 
-  class SevenDayRows extends Array {
+  class RollingHistoryRows extends Array {
     static get [Symbol.species]() { return Array; }
 
     map(callback, thisArg) {
       const mapped = Array.prototype.map.call(this, callback, thisArg);
-      const rolling = new SevenDayCandleArray();
+      const rolling = new RollingHistoryCandleArray();
       for (const item of mapped) Array.prototype.push.call(rolling, item);
       return rolling;
     }
   }
 
   function asHistoryRows(rows) {
-    const out = new SevenDayRows();
+    const out = new RollingHistoryRows();
     for (const row of rows) Array.prototype.push.call(out, Array.from(row));
     return out;
   }
@@ -223,7 +225,7 @@
     return Array.isArray(payload) ? payload : [];
   }
 
-  async function fetchSevenDays(meta) {
+  async function fetchHistoryWindow(meta) {
     const nowMs = Date.now();
     const cutoffMs = nowMs - HISTORY_WINDOW_MS;
     const alignedStart = Math.floor(cutoffMs / meta.intervalMs) * meta.intervalMs;
@@ -269,7 +271,7 @@
       this.type = 'basic';
       this.headers = new Headers({
         'content-type': 'application/json',
-        'x-stocks-history-window': '7d',
+        'x-stocks-history-window': `${HISTORY_DAYS}d`,
       });
       this._rows = rows;
     }
@@ -285,7 +287,7 @@
 
     let promise = inflight.get(meta.key);
     if (!promise) {
-      promise = fetchSevenDays(meta)
+      promise = fetchHistoryWindow(meta)
         .catch(async error => {
           const cached = await readCache(meta.key);
           if (cached.length) return cached;
@@ -350,9 +352,10 @@
   cleanupCache();
 
   window.__historyStore = Object.freeze({
-    days: 7,
+    days: HISTORY_DAYS,
     windowMs: HISTORY_WINDOW_MS,
     pageLimit: PAGE_LIMIT,
+    maxPages: MAX_PAGES,
     intervalMs: INTERVAL_MS,
     async get(symbol, interval) {
       return readCache(`${String(symbol).toUpperCase()}:${interval}`);
@@ -362,6 +365,7 @@
       return {
         symbol: String(symbol).toUpperCase(),
         interval,
+        days: HISTORY_DAYS,
         candles: rows.length,
         firstOpenTime: rows.length ? Number(rows[0][0]) : null,
         lastOpenTime: rows.length ? Number(rows[rows.length - 1][0]) : null,
