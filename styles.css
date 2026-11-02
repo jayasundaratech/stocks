@@ -12,17 +12,25 @@
 * { box-sizing: border-box; }
 body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0b1020; color:var(--text); }
 button,input { font:inherit; }
-.app-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--border); background:#080c18; position:sticky; top:0; z-index:10; }
+.app-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:1rem 1.25rem; border-bottom:1px solid var(--border); background:#080c18; position:sticky; top:0; z-index:30; }
 .app-header h1 { margin:0; font-size:clamp(1.25rem,2vw,1.8rem); }
 .eyebrow { margin:0 0 .2rem; color:#7fa4ff; font-size:.72rem; letter-spacing:.16em; font-weight:700; }
 .header-actions { display:flex; align-items:center; gap:.55rem; color:var(--muted); font-size:.9rem; }
 .live-dot { width:.62rem; height:.62rem; border-radius:999px; background:var(--green); box-shadow:0 0 0 5px rgba(24,185,129,.12); }
 .icon-button,.control-button,.symbol-item,.layout-button { border:1px solid var(--border); background:var(--panel-soft); color:var(--text); border-radius:.55rem; cursor:pointer; }
 .icon-button { width:2.15rem; height:2.15rem; }
-.layout-switcher { display:flex; align-items:center; gap:.28rem; padding:.25rem; border:1px solid var(--border); border-radius:.65rem; background:#0c1324; }
-.layout-button { width:2.05rem; height:2.05rem; padding:.36rem; display:grid; place-items:center; }
-.layout-button.active { border-color:var(--blue); background:#1a2c55; box-shadow:inset 0 0 0 1px var(--blue); }
-.layout-icon { display:grid; width:18px; height:18px; gap:2px; }
+
+.layout-dropdown { position:relative; }
+.layout-dropdown > summary { list-style:none; }
+.layout-dropdown > summary::-webkit-details-marker { display:none; }
+.layout-trigger { height:2.25rem; min-width:3.25rem; padding:.35rem .48rem; display:flex; align-items:center; justify-content:center; gap:.32rem; border:1px solid var(--border); border-radius:.55rem; background:#0c1324; color:var(--text); cursor:pointer; user-select:none; }
+.layout-dropdown[open] .layout-trigger { border-color:var(--blue); background:#14213d; }
+.layout-caret { font-size:.72rem; color:var(--muted); line-height:1; }
+.layout-menu { position:absolute; top:calc(100% + .45rem); right:0; width:170px; padding:.38rem; display:grid; gap:.28rem; border:1px solid var(--border); border-radius:.7rem; background:#0c1324; box-shadow:0 18px 48px rgba(0,0,0,.45); z-index:50; }
+.layout-button { width:100%; min-height:2.5rem; padding:.48rem .62rem; display:flex; align-items:center; gap:.65rem; text-align:left; background:transparent; border-color:transparent; }
+.layout-button:hover { background:#18243d; }
+.layout-button.active { border-color:#314c82; background:#1a2c55; }
+.layout-icon { display:grid; width:18px; height:18px; gap:2px; flex:0 0 18px; }
 .layout-icon::before,.layout-icon::after,.layout-icon span { content:""; border:1.5px solid currentColor; border-radius:1px; }
 .icon-1 { grid-template-columns:1fr; grid-template-rows:1fr; }
 .icon-1::before { grid-area:1/1; }
@@ -32,10 +40,11 @@ button,input { font:inherit; }
 .icon-2::after { grid-area:1/2; }
 .icon-3 { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; }
 .icon-3::before { grid-area:1/1/3/2; }
-.icon-3::after { grid-area:1/2; box-shadow:0 9px 0 -1px transparent, 0 9px 0 0 currentColor; }
+.icon-3::after { grid-area:1/2; box-shadow:0 9px 0 -1px #0c1324,0 9px 0 0 currentColor; }
 .icon-4 { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; position:relative; }
 .icon-4::before { grid-area:1/1; box-shadow:10px 0 0 -1px #0c1324,10px 0 0 0 currentColor,0 10px 0 -1px #0c1324,0 10px 0 0 currentColor,10px 10px 0 -1px #0c1324,10px 10px 0 0 currentColor; }
 .icon-4::after { display:none; }
+
 .dashboard-grid { display:grid; min-height:calc(100vh - 120px); }
 .dashboard-grid.layout-1 { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(560px,1fr); }
 .dashboard-grid.layout-1 .chart-card:nth-child(n+2) { display:none; }
@@ -82,8 +91,9 @@ button,input { font:inherit; }
   .chart-card { min-height:420px; }
 }
 @media (max-width:620px) {
-  .header-actions span:not(.live-dot) { display:none; }
-  .layout-switcher { order:-1; }
+  .header-actions span:not(.live-dot):not(.layout-caret) { display:none; }
+  .layout-dropdown { order:-1; }
+  .layout-menu { right:auto; left:0; }
   .chart-card { min-height:390px; }
   .chart-meta .price { margin-left:0; }
 }
