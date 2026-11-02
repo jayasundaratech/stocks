@@ -1,0 +1,292 @@
+:root {
+  --app-vh: 100dvh;
+  --app-vw: 100vw;
+  --app-header-h: 0px;
+  --app-content-h: 100dvh;
+  --responsive-card-h: 680px;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app-header,
+.dashboard-grid,
+.chart-card,
+.chart-toolbar,
+.chart-canvas-wrap,
+.chart-host,
+.oscillators-stack,
+.oscillator-pane,
+.oscillator-body,
+.osc-chart-host {
+  min-width: 0;
+}
+
+.dashboard-grid {
+  width: 100%;
+  max-width: 100vw;
+}
+
+.chart-toolbar {
+  overflow: visible;
+}
+
+.timeframe-buttons {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .28rem;
+  min-width: 0;
+}
+
+.chart-meta,
+.live-meta {
+  max-width: 100%;
+}
+
+.chart-meta .name,
+.live-meta {
+  overflow-wrap: anywhere;
+}
+
+/* Desktop/laptop: fit the complete selected layout inside the real viewport. */
+@media (min-width: 981px) {
+  body {
+    height: var(--app-vh);
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .dashboard-grid {
+    height: var(--app-content-h) !important;
+    min-height: 0 !important;
+    max-height: var(--app-content-h);
+    overflow: hidden !important;
+  }
+
+  .dashboard-grid.layout-1 {
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .dashboard-grid.layout-2 {
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  .dashboard-grid.layout-3,
+  .dashboard-grid.layout-4 {
+    grid-template-rows: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .dashboard-grid .chart-card,
+  .dashboard-grid .chart-card.has-oscillators,
+  .dashboard-grid .chart-canvas-wrap,
+  .dashboard-grid .chart-host {
+    min-height: 0 !important;
+  }
+
+  .dashboard-grid .chart-card {
+    overflow: hidden;
+  }
+
+  .dashboard-grid .oscillators-stack {
+    min-height: 0 !important;
+  }
+
+  .dashboard-grid .oscillator-pane {
+    min-height: 0 !important;
+  }
+}
+
+/* Smaller laptops/tablets: preserve the selected charts, but let each chart use a full usable screen. */
+@media (max-width: 980px) {
+  body {
+    min-height: var(--app-vh);
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .app-header {
+    position: sticky;
+    top: 0;
+    width: 100%;
+  }
+
+  .dashboard-grid,
+  .dashboard-grid.layout-1,
+  .dashboard-grid.layout-2,
+  .dashboard-grid.layout-3,
+  .dashboard-grid.layout-4 {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: none !important;
+    grid-auto-rows: var(--responsive-card-h);
+    overflow: visible !important;
+  }
+
+  .dashboard-grid.layout-3 .chart-card:nth-child(1) {
+    grid-row: auto !important;
+  }
+
+  .dashboard-grid .chart-card,
+  .dashboard-grid .chart-card.has-oscillators {
+    width: 100%;
+    height: var(--responsive-card-h) !important;
+    min-height: var(--responsive-card-h) !important;
+    max-height: var(--responsive-card-h);
+    overflow: hidden;
+  }
+
+  .dashboard-grid .chart-canvas-wrap,
+  .dashboard-grid .chart-host {
+    min-height: 0 !important;
+  }
+
+  .dashboard-grid .oscillators-stack {
+    flex-basis: clamp(180px, 32%, 280px) !important;
+    min-height: 0 !important;
+  }
+
+  .dashboard-grid .oscillator-pane {
+    min-height: 0 !important;
+  }
+
+  .app-footer {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    gap: .55rem;
+    padding: .65rem .72rem;
+  }
+
+  .app-header > div:first-child {
+    min-width: 0;
+  }
+
+  .header-actions {
+    gap: .35rem;
+  }
+
+  .chart-toolbar {
+    gap: .32rem;
+    padding: .44rem .48rem;
+  }
+
+  .symbol-search-wrap {
+    flex: 1 1 100%;
+    min-width: 0 !important;
+  }
+
+  .timeframe-buttons {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .timeframe-buttons .control-button {
+    flex: 1 1 44px;
+    min-width: 42px;
+    padding-inline: .42rem;
+  }
+
+  .chart-meta {
+    gap: .35rem;
+    padding: .42rem .52rem 0;
+  }
+
+  .live-meta {
+    padding: 0 .52rem .25rem;
+  }
+
+  .s2-pressure-dashboard {
+    right: 4.8rem;
+    max-width: calc(100% - 5.4rem);
+    min-width: 150px;
+    transform: scale(.92);
+    transform-origin: top right;
+  }
+}
+
+@media (max-width: 460px) {
+  .app-header h1 {
+    font-size: 1.08rem;
+  }
+
+  .eyebrow {
+    font-size: .62rem;
+    letter-spacing: .1em;
+  }
+
+  .chart-toolbar .control-button,
+  .timeframe-buttons .control-button {
+    font-size: .72rem;
+  }
+
+  .timeframe-buttons {
+    gap: .2rem;
+  }
+
+  .timeframe-buttons .control-button {
+    flex-basis: calc(16.666% - .2rem);
+    min-width: 0;
+    padding-inline: .28rem;
+  }
+
+  .chart-meta .ticker,
+  .chart-meta .price {
+    font-size: .9rem;
+  }
+
+  .chart-meta .name,
+  .chart-meta .change,
+  .live-meta {
+    font-size: .68rem;
+  }
+
+  .chart-status {
+    left: .45rem;
+    bottom: .42rem;
+    max-width: calc(100% - 5.8rem);
+    white-space: normal;
+  }
+
+  .chart-badge {
+    right: .45rem;
+  }
+
+  .s2-pressure-dashboard {
+    right: 4.5rem;
+    min-width: 138px;
+    font-size: 7.5px;
+    transform: scale(.86);
+  }
+}
+
+/* Phones/tablets in landscape can be very short; use every available pixel. */
+@media (max-height: 620px) and (min-width: 700px) {
+  .app-header {
+    padding-top: .42rem;
+    padding-bottom: .42rem;
+  }
+
+  .eyebrow {
+    display: none;
+  }
+
+  .chart-toolbar {
+    padding-top: .32rem;
+    padding-bottom: .32rem;
+  }
+
+  .chart-meta {
+    padding-top: .32rem;
+  }
+}
