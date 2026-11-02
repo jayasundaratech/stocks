@@ -1,0 +1,96 @@
+.oscillators-stack.pane-controls-enabled {
+  display: flex !important;
+  flex-direction: column;
+  grid-template-rows: none !important;
+}
+
+.oscillators-stack.pane-controls-enabled .oscillator-pane.controlled-pane {
+  flex: 1 1 0;
+  min-height: 0 !important;
+  transition: flex-basis .16s ease, opacity .16s ease;
+}
+
+.oscillators-stack.pane-controls-enabled .oscillator-pane.controlled-pane.is-collapsed {
+  flex: 0 0 28px !important;
+  min-height: 28px !important;
+}
+
+.oscillators-stack.pane-controls-enabled.all-collapsed {
+  flex: 0 0 56px !important;
+  min-height: 56px !important;
+}
+
+.oscillator-pane.is-collapsed .oscillator-body {
+  display: none !important;
+}
+
+.oscillator-pane.is-collapsed .oscillator-header {
+  min-height: 28px;
+  border-bottom: 0;
+}
+
+.osc-pane-control {
+  width: 25px;
+  height: 21px;
+  flex: 0 0 25px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: .35rem;
+  background: transparent;
+  color: #cbd6eb;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: .82rem;
+}
+
+.osc-pane-control:hover {
+  border-color: #33466d;
+  background: #17233b;
+  color: #fff;
+}
+
+.pane-controls-enabled .oscillator-header .osc-visibility-button {
+  margin-left: auto;
+}
+
+.pane-controls-enabled .oscillator-header .osc-settings-button {
+  margin-left: 0;
+}
+
+.oscillator-pane.is-disabled .oscillator-header strong,
+.oscillator-pane.is-disabled .oscillator-value {
+  opacity: .48;
+}
+
+.oscillator-pane.is-disabled .osc-visibility-button {
+  color: #71809d;
+}
+
+.oscillator-pane.is-disabled:not(.is-collapsed) .osc-chart-host,
+.oscillator-pane.is-disabled:not(.is-collapsed) .osc-band,
+.oscillator-pane.is-disabled:not(.is-collapsed) .osc-extra-zone {
+  visibility: hidden !important;
+}
+
+.oscillator-pane.is-disabled:not(.is-collapsed) .oscillator-body::after {
+  content: 'Indicator off';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  color: #697995;
+  font-size: .74rem;
+  letter-spacing: .03em;
+  background: #0d1425;
+  pointer-events: none;
+}
+
+@media (max-width: 980px) {
+  .oscillators-stack.pane-controls-enabled.all-collapsed {
+    flex-basis: 56px !important;
+    min-height: 56px !important;
+  }
+}
