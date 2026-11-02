@@ -44,12 +44,8 @@
 
   function palette(theme) {
     return theme === 'light'
-      ? {
-          background: '#ffffff', text: '#475569', grid: '#e5e7eb', border: '#d1d5db', crosshair: '#64748b'
-        }
-      : {
-          background: '#0d1425', text: '#91a0bd', grid: '#25304a', border: '#26324d', crosshair: '#94a3b8'
-        };
+      ? { background: '#ffffff', text: '#475569', grid: '#e5e7eb', border: '#d1d5db', crosshair: '#64748b' }
+      : { background: '#0d1425', text: '#91a0bd', grid: '#25304a', border: '#26324d', crosshair: '#94a3b8' };
   }
 
   function applyChartTheme(chart, theme) {
@@ -68,9 +64,7 @@
           vertLine: { color: p.crosshair },
           horzLine: { color: p.crosshair },
         },
-        localization: {
-          timeFormatter: time => formatCrosshairTime(time),
-        },
+        localization: { timeFormatter: time => formatCrosshairTime(time) },
       });
     } catch (error) {
       console.debug('Theme/timezone apply skipped', error);
@@ -145,12 +139,6 @@
       checks += 1;
       if (checks > 40) clearInterval(timer);
     }, 250);
-
-    const observer = new MutationObserver(() => {
-      installHeaderControls();
-      applyToAllCharts(document.body.dataset.theme || 'dark');
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   window.__dashboardTimezone = TZ;
