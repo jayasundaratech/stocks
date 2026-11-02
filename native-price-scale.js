@@ -1,7 +1,7 @@
 (() => {
   const controllers = new WeakMap();
-  const MIN_ZOOM = 0.0025;   // very tall candles
-  const MAX_ZOOM = 1000;     // very short candles
+  const MIN_ZOOM = 0.0025;
+  const MAX_ZOOM = 1000;
   const DRAG_SENSITIVITY = 0.010;
   const WHEEL_SENSITIVITY = 0.0018;
 
@@ -16,7 +16,6 @@
   function stripLegacyZoomText(card) {
     const meta = card.querySelector('.live-meta');
     if (!meta || meta.__scaleTextCleaner) return;
-
     const clean = () => {
       const current = meta.textContent || '';
       const next = current
@@ -25,7 +24,6 @@
         .trim();
       if (next !== current) meta.textContent = next;
     };
-
     clean();
     const observer = new MutationObserver(clean);
     observer.observe(meta, { childList: true, characterData: true, subtree: true });
@@ -36,15 +34,12 @@
     return original => {
       const info = original();
       if (!info?.priceRange) return info;
-
       const min = Number(info.priceRange.minValue);
       const max = Number(info.priceRange.maxValue);
       if (!Number.isFinite(min) || !Number.isFinite(max)) return info;
-
       const center = (min + max) / 2;
       const baseHalf = Math.max((max - min) / 2, Math.abs(center) * 1e-9, 1e-9);
       const half = baseHalf * controller.zoom;
-
       return {
         ...info,
         priceRange: {
@@ -58,7 +53,6 @@
   function suppressOverlayAutoscale(series) {
     if (!series || series.__priceScaleAutoscaleSuppressed) return;
     series.__priceScaleAutoscaleSuppressed = true;
-
     const nativeApplyOptions = series.applyOptions.bind(series);
     series.applyOptions = options => {
       if (options && Object.prototype.hasOwnProperty.call(options, 'autoscaleInfoProvider')) {
@@ -66,7 +60,6 @@
       }
       return nativeApplyOptions(options);
     };
-
     nativeApplyOptions({ autoscaleInfoProvider: () => null });
   }
 
@@ -76,7 +69,6 @@
       record.candleSeries.__nativeApplyOptions({ autoscaleInfoProvider: provider });
       record.chart.priceScale('right').applyOptions({ autoScale: true });
     } catch (_) {}
-
     controller.card.dataset.priceScaleZoom = controller.zoom.toFixed(4);
   }
 
@@ -94,8 +86,6 @@
     if (!record?.chart || !record?.candleSeries) return false;
     if (controllers.has(card)) return true;
 
-    // Remove every older price-axis implementation. Only this controller
-    // receives pointer events on the right price scale.
     card.querySelectorAll('.price-axis-control, .price-axis-control-v2').forEach(node => node.remove());
 
     const controller = {
@@ -108,9 +98,6 @@
     };
     controller.provider = makeScaledProvider(controller);
 
-    // app-v4 still tries to restore its old candle-only provider on load/reset.
-    // Keep all normal series options, but permanently substitute the stable
-    // controller provider whenever that legacy option is supplied.
     const nativeApplyOptions = record.candleSeries.applyOptions.bind(record.candleSeries);
     record.candleSeries.__nativeApplyOptions = nativeApplyOptions;
     record.candleSeries.applyOptions = options => {
@@ -120,13 +107,9 @@
       return nativeApplyOptions(options);
     };
 
-    // EMA / BB / VWAP remain attached to the same visible right scale, but
-    // they no longer force its autoscale range. This is equivalent to
-    // TradingView's "Scale price chart only" behavior.
     (record.lineSeries || []).forEach(suppressOverlayAutoscale);
+    record.onLineSeriesAdded = suppressOverlayAutoscale;
 
-    // Disable the library's built-in price-axis scaling so it cannot compete
-    // with the unrestricted controller below. Time-axis scaling stays native.
     try {
       record.chart.applyOptions({
         handleScale: {
@@ -182,8 +165,6 @@
       const drag = controller.drag;
       if (!drag || drag.pointerId !== event.pointerId) return;
       const dy = event.clientY - drag.startY;
-      // Down = wider price range = shorter candles.
-      // Up   = narrower price range = taller candles.
       setZoom(controller, drag.startZoom * Math.exp(dy * DRAG_SENSITIVITY));
       event.preventDefault();
       event.stopPropagation();
@@ -212,7 +193,6 @@
       event.stopPropagation();
     });
 
-    // The toolbar reset must reset vertical price scale as well as time scale.
     card.querySelector('.reset-view')?.addEventListener('click', () => {
       setTimeout(() => reset(controller), 0);
     });
@@ -231,7 +211,6 @@
     if (pending) requestAnimationFrame(installAll);
   }
 
-  // Keep old app code from re-inserting its transparent axis overlay.
   const rootObserver = new MutationObserver(() => {
     document.querySelectorAll('.price-axis-control').forEach(node => node.remove());
     installAll();
