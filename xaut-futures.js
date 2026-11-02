@@ -130,8 +130,9 @@
 
   async function fetchXautHistory(meta, init = {}) {
     const collected = [];
-    let endTime = Number(meta.url.searchParams.get('endTime'));
-    if (!Number.isFinite(endTime)) endTime = Date.now();
+    const rawEndTime = meta.url.searchParams.get('endTime');
+    let endTime = rawEndTime ? Number(rawEndTime) : Date.now();
+    if (!Number.isFinite(endTime) || endTime <= 0) endTime = Date.now();
     let lastResponse = null;
 
     for (let page = 0; page < MAX_BACKFILL_PAGES && collected.length < meta.limit; page += 1) {
