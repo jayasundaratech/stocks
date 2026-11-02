@@ -1,0 +1,272 @@
+/* Indicator toolbar control */
+.indicator-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .28rem;
+  white-space: nowrap;
+}
+.fx-symbol { font-weight: 800; font-size: .82rem; }
+.indicator-label { font-size: .75rem; }
+
+/* Bollinger fill overlay. */
+.chart-canvas-wrap { position: relative; }
+.indicator-fill-layer {
+  position: absolute;
+  inset: .1rem .15rem .25rem .15rem;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.chart-host { position: relative; z-index: 1; }
+.chart-badge, .chart-status { z-index: 5 !important; }
+.price-axis-control { z-index: 8 !important; }
+
+/* TradingView-like indicator settings modal */
+.indicator-modal-backdrop[hidden] { display: none !important; }
+.indicator-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 10, 20, .38);
+  padding: 18px;
+}
+.indicator-modal {
+  width: min(480px, calc(100vw - 28px));
+  max-height: min(880px, calc(100dvh - 36px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #fff;
+  color: #141414;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .32);
+  border: 1px solid #ddd;
+}
+.indicator-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 19px 22px 13px;
+}
+.indicator-modal-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+.indicator-close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: #111;
+  cursor: pointer;
+  font-size: 2rem;
+  font-weight: 300;
+  line-height: 1;
+}
+.indicator-tabs {
+  display: flex;
+  gap: 28px;
+  margin: 0 22px;
+  border-bottom: 4px solid #f0f0f0;
+}
+.indicator-tabs button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: #151515;
+  padding: 8px 0 11px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.indicator-tabs button.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 4px;
+  border-radius: 4px;
+  background: #171717;
+}
+.indicator-modal-body {
+  overflow: auto;
+  padding: 15px 22px 24px;
+  scrollbar-width: thin;
+}
+.settings-section {
+  padding: 10px 0 17px;
+}
+.settings-section + .settings-section {
+  border-top: 1px solid #f2f2f2;
+}
+.settings-section h3 {
+  margin: 4px 0 13px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: .025em;
+  font-size: .72rem;
+  font-weight: 500;
+}
+.settings-row {
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 164px;
+  gap: 14px;
+  align-items: center;
+  font-size: .95rem;
+}
+.settings-label {
+  min-width: 0;
+}
+.settings-label small {
+  display: block;
+  color: #8a8a8a;
+  font-size: .68rem;
+  margin-top: 3px;
+}
+.settings-number,
+.settings-select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d8d8d8;
+  border-radius: 9px;
+  background: #fff;
+  color: #171717;
+  padding: 0 10px;
+  outline: none;
+}
+.settings-number:focus,
+.settings-select:focus,
+.style-color:focus {
+  border-color: #2962ff;
+  box-shadow: 0 0 0 1px #2962ff;
+}
+.settings-select:disabled {
+  color: #333;
+  background: #fafafa;
+}
+.tv-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  width: max-content;
+}
+.tv-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.tv-checkbox span {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid #777;
+  background: #fff;
+}
+.tv-checkbox input:checked + span {
+  background: #1f1f1f;
+  border-color: #1f1f1f;
+}
+.tv-checkbox input:checked + span::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translateY(-1px);
+}
+.style-row {
+  min-height: 61px;
+  display: grid;
+  grid-template-columns: 28px minmax(120px, 1fr) 92px 58px 90px;
+  gap: 9px;
+  align-items: center;
+  border-bottom: 1px solid #f5f5f5;
+}
+.style-name {
+  font-size: .95rem;
+  min-width: 0;
+}
+.style-color {
+  width: 92px;
+  height: 42px;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  background: #fff;
+  padding: 4px;
+  cursor: pointer;
+}
+.style-row .settings-select {
+  min-height: 42px;
+  padding: 0 6px;
+}
+.opacity-input {
+  grid-column: span 2;
+}
+.visibility-section .settings-row {
+  grid-template-columns: 1fr 70px;
+}
+.settings-note {
+  margin: 10px 0 0;
+  color: #777;
+  font-size: .75rem;
+  line-height: 1.45;
+}
+.indicator-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #e5e5e5;
+  padding: 14px 22px 18px;
+  background: #fff;
+}
+.indicator-footer-spacer { flex: 1; }
+.indicator-modal-footer button {
+  min-height: 43px;
+  padding: 0 17px;
+  border-radius: 9px;
+  border: 1px solid #bdbdbd;
+  background: #fff;
+  color: #171717;
+  cursor: pointer;
+  font-weight: 600;
+}
+.indicator-modal-footer .indicator-ok {
+  background: #1f1f1f;
+  color: #fff;
+  border-color: #1f1f1f;
+}
+.indicator-defaults::after {
+  content: " ▾";
+  color: #777;
+}
+
+@media (max-width: 700px) {
+  .indicator-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .indicator-modal {
+    width: 100vw;
+    max-height: 92dvh;
+    border-radius: 12px 12px 0 0;
+  }
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr) 145px;
+  }
+  .style-row {
+    grid-template-columns: 28px minmax(90px, 1fr) 72px 54px;
+  }
+  .style-row .settings-select:last-child {
+    grid-column: 2 / -1;
+  }
+  .indicator-label { display: none; }
+}
