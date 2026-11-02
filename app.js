@@ -83,7 +83,7 @@ function connect(state) {
 
   socket.addEventListener('open', () => {
     if (state.socket !== socket) return;
-    setStatus(state, 'live', 'LIVE • drag chart to pan • drag right price scale ↕ to zoom');
+    setStatus(state, 'live', 'LIVE • drag chart to pan • drag RIGHT price numbers ↕ to zoom price range only');
   });
 
   socket.addEventListener('message', event => {
@@ -228,7 +228,7 @@ function makeCard(card, index) {
       borderVisible: true,
       borderColor: '#26324d',
       ticksVisible: true,
-      minimumWidth: 74,
+      minimumWidth: 86,
       scaleMargins: { top: 0.08, bottom: 0.22 },
     },
     timeScale: {
@@ -238,16 +238,16 @@ function makeCard(card, index) {
       rightOffset: 6,
     },
     handleScroll: {
-      mouseWheel: true,
+      mouseWheel: false,
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: true,
+      vertTouchDrag: false,
     },
     handleScale: {
-      mouseWheel: true,
-      pinch: true,
-      axisPressedMouseMove: { time: true, price: true },
-      axisDoubleClickReset: { time: true, price: true },
+      mouseWheel: false,
+      pinch: false,
+      axisPressedMouseMove: { time: false, price: true },
+      axisDoubleClickReset: { time: false, price: true },
     },
   });
 
