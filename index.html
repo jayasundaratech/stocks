@@ -12,10 +12,12 @@
   <link rel="stylesheet" href="layout-fixes.css?v=volume-layout-20261101-2" />
   <link rel="stylesheet" href="indicator.css?v=indicator-20261102-1" />
   <link rel="stylesheet" href="oscillators.css?v=oscillators-20261102-1" />
+  <link rel="stylesheet" href="oscillator-fixes.css?v=osc-sync-20261102-2" />
   <script type="importmap">
     {
       "imports": {
-        "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm": "./lightweight-wrapper.js?v=linked-crosshair-20261102-1"
+        "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm": "./lightweight-wrapper.js?v=linked-crosshair-20261102-1",
+        "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm?oscillator-panes=1": "./oscillator-wrapper.js?v=osc-sync-20261102-2"
       }
     }
   </script>
@@ -67,5 +69,6 @@
   <script type="module" src="app-v4.js?v=indicator-20261102-1"></script>
   <script type="module" src="linked-crosshair.js?v=linked-crosshair-20261102-1"></script>
   <script type="module" src="oscillators.js?v=oscillators-20261102-1"></script>
+  <script type="module" src="oscillator-sync-fix.js?v=osc-sync-20261102-2"></script>
 </body>
 </html>
