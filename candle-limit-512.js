@@ -2,16 +2,6 @@
   'use strict';
 
   const CANDLE_LIMIT = 512;
-  const MAX_XAUT_PAGES = 16;
-  const INTERVAL_MS = Object.freeze({
-    '1m': 60_000,
-    '5m': 5 * 60_000,
-    '15m': 15 * 60_000,
-    '1h': 60 * 60_000,
-    '4h': 4 * 60 * 60_000,
-    '1d': 24 * 60 * 60_000,
-  });
-
   const baseFetch = window.fetch.bind(window);
 
   function parseKlineRequest(input) {
@@ -24,14 +14,8 @@
 
       const symbol = (url.searchParams.get('symbol') || '').toUpperCase();
       const interval = url.searchParams.get('interval') || '';
-      if (!symbol || !INTERVAL_MS[interval]) return null;
-
-      return {
-        url,
-        symbol,
-        interval,
-        intervalMs: INTERVAL_MS[interval],
-      };
+      if (!symbol || !interval) return null;
+      return { url, symbol, interval };
     } catch (_) {
       return null;
     }
@@ -53,9 +37,9 @@
   class FixedCandleArray extends Array {
     static get [Symbol.species]() { return Array; }
 
-    // app-v4.js and oscillators.js still contain their old >500 trim check.
-    // Keep those files untouched and only allow a shift when the array is
-    // actually above the new 512-candle cap.
+    // app-v4.js and oscillators.js still contain the legacy >500 trim check.
+    // Keep exactly 512 candles by allowing their shift only after a new bar
+    // temporarily grows the array to 513.
     shift() {
       if (this.length > CANDLE_LIMIT) {
         return Array.prototype.shift.call(this);
@@ -103,67 +87,32 @@
     clone() { return new FixedResponse(this._response, this._rows, this.url); }
   }
 
-  async function fetchPage(url, init) {
-    const response = await baseFetch(url.toString(), init);
-    if (!response.ok) return { response, rows: null };
-    const rows = await response.json();
-    return { response, rows: Array.isArray(rows) ? rows : [] };
-  }
-
-  async function fetchXaut(meta, init) {
-    const collected = [];
-    let endTime = Number(meta.url.searchParams.get('endTime'));
-    if (!Number.isFinite(endTime)) endTime = Date.now();
-    let lastResponse = null;
-
-    for (let page = 0; page < MAX_XAUT_PAGES && collected.length < CANDLE_LIMIT; page += 1) {
-      const pageUrl = new URL(meta.url.toString());
-      pageUrl.searchParams.delete('startTime');
-      pageUrl.searchParams.set('endTime', String(endTime));
-      pageUrl.searchParams.set('limit', String(CANDLE_LIMIT));
-
-      const { response, rows } = await fetchPage(pageUrl, init);
-      lastResponse = response;
-      if (!response.ok || rows === null) return response;
-
-      if (rows.length) {
-        collected.unshift(...rows);
-        const earliest = Number(rows[0][0]);
-        endTime = Number.isFinite(earliest)
-          ? earliest - 1
-          : endTime - CANDLE_LIMIT * meta.intervalMs;
-      } else {
-        // XAUT's recurring weekend blackout can produce a completely empty
-        // filtered page. Step backward and keep looking for the previous
-        // real candles instead of stopping early.
-        endTime -= CANDLE_LIMIT * meta.intervalMs;
-      }
-    }
-
-    return new FixedResponse(lastResponse || new Response('[]'), collected, meta.url.toString());
-  }
-
   window.fetch = async function fixed512Fetch(input, init = {}) {
     const meta = parseKlineRequest(input);
     if (!meta) return baseFetch(input, init);
 
-    if (meta.symbol === 'XAUTUSDT') {
-      return fetchXaut(meta, { ...init, cache: 'no-store' });
-    }
-
+    // One fixed-count policy for every market. XAUT routing/backfill is owned
+    // entirely by xaut-futures.js; this layer only asks it for 512 candles.
     const url = new URL(meta.url.toString());
     url.searchParams.delete('startTime');
     url.searchParams.delete('endTime');
     url.searchParams.set('limit', String(CANDLE_LIMIT));
 
-    const { response, rows } = await fetchPage(url, { ...init, cache: 'no-store' });
-    if (!response.ok || rows === null) return response;
+    const response = await baseFetch(url.toString(), { ...init, cache: 'no-store' });
+    if (!response.ok) return response;
+
+    let rows;
+    try {
+      rows = await response.json();
+    } catch (_) {
+      return response;
+    }
+    if (!Array.isArray(rows)) rows = [];
+
     return new FixedResponse(response, rows, url.toString());
   };
 
   window.__candleHistoryLimit = Object.freeze({
     candles: CANDLE_LIMIT,
-    xautMaxPages: MAX_XAUT_PAGES,
-    intervalMs: INTERVAL_MS,
   });
 })();
