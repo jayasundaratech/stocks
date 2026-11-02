@@ -1,0 +1,20 @@
+.osc-chart-host {
+  inset: .1rem .15rem .25rem .15rem !important;
+}
+
+.osc-band,
+.osc-extra-zone {
+  left: .15rem !important;
+  right: calc(86px + .15rem) !important;
+}
+
+.chart-card.has-oscillators .chart-canvas-wrap {
+  padding-bottom: 0 !important;
+}
+
+@media (min-width: 981px) {
+  .dashboard-grid.layout-1 .oscillators-stack { flex-basis: 38%; }
+  .dashboard-grid.layout-2 .oscillators-stack { flex-basis: 36%; }
+  .dashboard-grid.layout-3 .oscillators-stack,
+  .dashboard-grid.layout-4 .oscillators-stack { flex-basis: 38%; }
+}
