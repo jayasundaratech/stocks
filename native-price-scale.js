@@ -34,12 +34,20 @@
     return original => {
       const info = original();
       if (!info?.priceRange) return info;
+
       const min = Number(info.priceRange.minValue);
       const max = Number(info.priceRange.maxValue);
       if (!Number.isFinite(min) || !Number.isFinite(max)) return info;
-      const center = (min + max) / 2;
-      const baseHalf = Math.max((max - min) / 2, Math.abs(center) * 1e-9, 1e-9);
+
+      const baseCenter = (min + max) / 2;
+      const baseHalf = Math.max((max - min) / 2, Math.abs(baseCenter) * 1e-9, 1e-9);
       const half = baseHalf * controller.zoom;
+      const center = baseCenter + controller.offset;
+
+      controller.lastBaseCenter = baseCenter;
+      controller.lastBaseHalf = baseHalf;
+      controller.lastRenderedHalf = half;
+
       return {
         ...info,
         priceRange: {
@@ -70,6 +78,7 @@
       record.chart.priceScale('right').applyOptions({ autoScale: true });
     } catch (_) {}
     controller.card.dataset.priceScaleZoom = controller.zoom.toFixed(4);
+    controller.card.dataset.priceScaleOffset = controller.offset.toFixed(8);
   }
 
   function setZoom(controller, zoom) {
@@ -77,8 +86,76 @@
     refreshScale(controller);
   }
 
+  function setOffset(controller, offset) {
+    controller.offset = Number.isFinite(offset) ? offset : 0;
+    refreshScale(controller);
+  }
+
   function reset(controller) {
-    setZoom(controller, 1);
+    controller.zoom = 1;
+    controller.offset = 0;
+    refreshScale(controller);
+  }
+
+  function installChartBodyPan(controller) {
+    const host = controller.record.container;
+    if (!host || host.__priceBodyPanInstalled) return;
+    host.__priceBodyPanInstalled = true;
+
+    const startBodyDrag = event => {
+      if (event.button !== 0) return;
+      const rect = host.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return;
+
+      controller.bodyDrag = {
+        pointerId: event.pointerId,
+        startY: event.clientY,
+        startOffset: controller.offset,
+        height: rect.height,
+        renderedHalf: Math.max(controller.lastRenderedHalf || 0, 1e-9),
+      };
+
+      // IMPORTANT: do not preventDefault or stopPropagation here.
+      // Lightweight Charts still receives the same pointer event and keeps
+      // its normal left/right time panning while this controller adds only
+      // vertical price-range translation.
+    };
+
+    const moveBodyDrag = event => {
+      const drag = controller.bodyDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      if ((event.buttons & 1) !== 1) return;
+
+      const dy = event.clientY - drag.startY;
+      const fullRange = drag.renderedHalf * 2;
+      const priceDelta = (dy / Math.max(1, drag.height)) * fullRange;
+
+      // Drag chart downward -> candles move downward on screen.
+      // That requires moving the visible price range upward.
+      setOffset(controller, drag.startOffset + priceDelta);
+
+      // Deliberately do not cancel/stop the event: horizontal pan remains
+      // handled by Lightweight Charts in the same gesture.
+    };
+
+    const stopBodyDrag = event => {
+      const drag = controller.bodyDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      controller.bodyDrag = null;
+    };
+
+    host.addEventListener('pointerdown', startBodyDrag, true);
+    window.addEventListener('pointermove', moveBodyDrag, true);
+    window.addEventListener('pointerup', stopBodyDrag, true);
+    window.addEventListener('pointercancel', stopBodyDrag, true);
+
+    controller.bodyPanCleanup = () => {
+      host.removeEventListener('pointerdown', startBodyDrag, true);
+      window.removeEventListener('pointermove', moveBodyDrag, true);
+      window.removeEventListener('pointerup', stopBodyDrag, true);
+      window.removeEventListener('pointercancel', stopBodyDrag, true);
+      delete host.__priceBodyPanInstalled;
+    };
   }
 
   function installController(card) {
@@ -92,9 +169,14 @@
       card,
       record,
       zoom: 1,
+      offset: 0,
       drag: null,
+      bodyDrag: null,
       provider: null,
       axis: null,
+      lastBaseCenter: 0,
+      lastBaseHalf: 1,
+      lastRenderedHalf: 1,
     };
     controller.provider = makeScaledProvider(controller);
 
@@ -112,6 +194,12 @@
 
     try {
       record.chart.applyOptions({
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        },
         handleScale: {
           mouseWheel: true,
           pinch: true,
@@ -193,6 +281,8 @@
       event.stopPropagation();
     });
 
+    installChartBodyPan(controller);
+
     card.querySelector('.reset-view')?.addEventListener('click', () => {
       setTimeout(() => reset(controller), 0);
     });
@@ -231,6 +321,7 @@
   window.__priceScaleController = {
     installAll,
     getZoom(card) { return controllers.get(card)?.zoom ?? null; },
+    getOffset(card) { return controllers.get(card)?.offset ?? null; },
     reset(card) {
       const controller = controllers.get(card);
       if (controller) reset(controller);
