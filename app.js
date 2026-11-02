@@ -60,6 +60,11 @@ function updateHeader(state, latest) {
   state.change.className = `change ${change >= 0 ? 'positive' : 'negative'}`;
 }
 
+function resetView(state) {
+  state.chart.priceScale('right').applyOptions({ autoScale: true });
+  state.chart.timeScale().fitContent();
+}
+
 function disconnect(state) {
   clearTimeout(state.reconnectTimer);
   if (state.socket) {
@@ -78,7 +83,7 @@ function connect(state) {
 
   socket.addEventListener('open', () => {
     if (state.socket !== socket) return;
-    setStatus(state, 'live', 'LIVE • drag chart to pan • drag price axis to scale');
+    setStatus(state, 'live', 'LIVE • drag chart to pan • drag right price scale ↕ to zoom');
   });
 
   socket.addEventListener('message', event => {
@@ -131,15 +136,7 @@ function connect(state) {
   });
 }
 
-function resetView(state) {
-  state.chart.timeScale().fitContent();
-  state.candleSeries.priceScale().applyOptions({
-    autoScale: true,
-    scaleMargins: { top: 0.08, bottom: 0.22 },
-  });
-}
-
-async function load(state, reset = true) {
+async function load(state, resetChartView = true) {
   disconnect(state);
   state.tickCount = 0;
   state.lastUpdateAt = null;
@@ -163,7 +160,7 @@ async function load(state, reset = true) {
     })));
 
     updateHeader(state, state.candles[state.candles.length - 1]);
-    if (reset) resetView(state);
+    if (resetChartView) resetView(state);
     connect(state);
   } catch (error) {
     console.error(error);
@@ -227,12 +224,19 @@ function makeCard(card, index) {
     crosshair: { mode: CrosshairMode.Normal },
     rightPriceScale: {
       visible: true,
+      autoScale: true,
       borderVisible: true,
       borderColor: '#26324d',
+      ticksVisible: true,
+      minimumWidth: 74,
       scaleMargins: { top: 0.08, bottom: 0.22 },
-      minimumWidth: 72,
     },
-    timeScale: { borderColor: '#26324d', timeVisible: true, secondsVisible: false, rightOffset: 6 },
+    timeScale: {
+      borderColor: '#26324d',
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 6,
+    },
     handleScroll: {
       mouseWheel: true,
       pressedMouseMove: true,
@@ -240,10 +244,10 @@ function makeCard(card, index) {
       vertTouchDrag: true,
     },
     handleScale: {
-      axisPressedMouseMove: { time: true, price: true },
-      axisDoubleClickReset: { time: true, price: true },
       mouseWheel: true,
       pinch: true,
+      axisPressedMouseMove: { time: true, price: true },
+      axisDoubleClickReset: { time: true, price: true },
     },
   });
 
@@ -251,11 +255,6 @@ function makeCard(card, index) {
     upColor: '#18b981', downColor: '#ef5350', borderVisible: false,
     wickUpColor: '#18b981', wickDownColor: '#ef5350',
     priceLineVisible: true, lastValueVisible: true,
-  });
-
-  candleSeries.priceScale().applyOptions({
-    autoScale: true,
-    scaleMargins: { top: 0.08, bottom: 0.22 },
   });
 
   const volumeSeries = chart.addHistogramSeries({
