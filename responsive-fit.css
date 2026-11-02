@@ -103,7 +103,7 @@ body {
 }
 
 /* Wide but short windows: preserve columns and readability instead of crushing panes. */
-@media (min-width: 981px) and (max-height: 680px) {
+@media (min-width: 981px) and (max-height: 820px) {
   body {
     height: auto;
     min-height: var(--app-vh) !important;
