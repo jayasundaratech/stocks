@@ -1,0 +1,46 @@
+/* Desktop chart layouts: keep all selected panes visible inside the viewport. */
+@media (min-width: 981px) {
+  body { overflow: hidden; }
+  .app-footer { display: none; }
+
+  .dashboard-grid {
+    height: calc(100dvh - 94px);
+    min-height: 0 !important;
+    overflow: hidden;
+  }
+
+  .dashboard-grid.layout-1 {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .dashboard-grid.layout-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .dashboard-grid.layout-3 {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, .65fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-grid.layout-3 .chart-card:nth-child(1) { grid-row: 1 / 3; }
+
+  .dashboard-grid.layout-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-grid .chart-card {
+    min-height: 0 !important;
+    overflow: hidden;
+  }
+
+  .dashboard-grid .chart-canvas-wrap,
+  .dashboard-grid .chart-host {
+    min-height: 0 !important;
+  }
+}
+
+/* A hidden pane must stay hidden regardless of older layout CSS rules. */
+.chart-card[hidden] { display: none !important; }
