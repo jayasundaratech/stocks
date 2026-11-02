@@ -295,7 +295,34 @@ function makeCard(card, index) {
   load(state, true);
 }
 
+function setLayout(layout) {
+  const value = ['1', '2', '3', '4'].includes(String(layout)) ? String(layout) : '4';
+  const grid = document.getElementById('dashboardGrid');
+  grid.classList.remove('layout-1', 'layout-2', 'layout-3', 'layout-4');
+  grid.classList.add(`layout-${value}`);
+  grid.dataset.layout = value;
+
+  document.querySelectorAll('.layout-button').forEach(button => {
+    const active = button.dataset.layout === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+
+  requestAnimationFrame(() => {
+    states.forEach(state => {
+      if (getComputedStyle(state.card).display === 'none') return;
+      const rect = state.host.getBoundingClientRect();
+      state.chart.applyOptions({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+    });
+  });
+}
+
 document.querySelectorAll('.chart-card').forEach(makeCard);
+document.querySelectorAll('.layout-button').forEach(button => {
+  button.addEventListener('click', () => setLayout(button.dataset.layout));
+});
+setLayout(document.getElementById('dashboardGrid')?.dataset.layout || '4');
+
 document.addEventListener('click', event => states.forEach(state => { if (!state.card.contains(event.target)) state.menu.classList.remove('open'); }));
 document.getElementById('resetAll').addEventListener('click', () => states.forEach(resetView));
 setInterval(() => states.forEach(updateMeta), 1000);
