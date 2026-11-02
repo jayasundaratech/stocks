@@ -1,4 +1,4 @@
-import * as LWC from 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm?stocks-osc-wrapper=3';
+import * as LWC from 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/+esm?stocks-osc-wrapper=4';
 
 export const CrosshairMode = LWC.CrosshairMode;
 export const LineStyle = LWC.LineStyle;
@@ -20,20 +20,44 @@ function detectInterval(data) {
   return null;
 }
 
-function expandAnchorData(data, intervalSec) {
+function chartSymbol(container) {
+  return container.closest('.chart-card')?.querySelector('.symbol-search')?.value?.trim().toUpperCase() || '';
+}
+
+function shouldSkipAnchorTime(container, timeSec, intervalSec) {
+  if (chartSymbol(container) !== 'XAUTUSDT') return false;
+  const router = window.__xautMarketRouter;
+  if (!router) return false;
+
+  const openMs = Number(timeSec) * 1000;
+  const closeMs = openMs + Number(intervalSec || 0) * 1000 - 1;
+
+  if (typeof router.isWeekendBlackoutKline === 'function') {
+    return router.isWeekendBlackoutKline(openMs, closeMs);
+  }
+  if (typeof router.isWeekendBlackoutInstant === 'function') {
+    return router.isWeekendBlackoutInstant(openMs);
+  }
+  return false;
+}
+
+function expandAnchorData(data, intervalSec, container) {
   if (!Array.isArray(data) || data.length !== 2 || !intervalSec) return data;
   const first = numericTime(data[0]?.time);
   const last = numericTime(data[1]?.time);
   if (first == null || last == null || last <= first) return data;
 
   const count = Math.round((last - first) / intervalSec) + 1;
-  if (!Number.isFinite(count) || count < 2 || count > 2000) return data;
+  if (!Number.isFinite(count) || count < 2 || count > 5000) return data;
 
   const value = Number.isFinite(data[0]?.value) ? data[0].value : 50;
-  return Array.from({ length: count }, (_, index) => ({
-    time: first + index * intervalSec,
-    value,
-  }));
+  const expanded = [];
+  for (let index = 0; index < count; index++) {
+    const time = first + index * intervalSec;
+    if (shouldSkipAnchorTime(container, time, intervalSec)) continue;
+    expanded.push({ time, value });
+  }
+  return expanded.length >= 2 ? expanded : data;
 }
 
 export function createChart(container, options) {
@@ -57,7 +81,7 @@ export function createChart(container, options) {
         return;
       }
 
-      const expanded = expandAnchorData(data, record.intervalSec);
+      const expanded = expandAnchorData(data, record.intervalSec, container);
       seriesRecord.lastData = expanded;
       originalSetData(expanded);
     };
