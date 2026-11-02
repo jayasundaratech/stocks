@@ -1,8 +1,22 @@
 (() => {
+  'use strict';
+
   const XAUT_SYMBOL = 'XAUTUSDT';
   const FUTURES_REST = 'https://fapi.binance.com/fapi/v1/klines';
-  const FUTURES_WS_PREFIX = 'wss://fstream.binance.com/market/ws/';
+  const FUTURES_WS_PREFIX = 'wss://fstream.binance.com/ws/';
   const VANCOUVER_TZ = 'America/Vancouver';
+  const MAX_BACKFILL_PAGES = 16;
+  const INTERVAL_MS = Object.freeze({
+    '1m': 60_000,
+    '5m': 5 * 60_000,
+    '15m': 15 * 60_000,
+    '1h': 60 * 60_000,
+    '4h': 4 * 60 * 60_000,
+    '1d': 24 * 60 * 60_000,
+  });
+
+  const nativeFetch = window.fetch.bind(window);
+  const NativeWebSocket = window.WebSocket;
 
   const vancouverClock = new Intl.DateTimeFormat('en-CA', {
     timeZone: VANCOUVER_TZ,
@@ -29,8 +43,6 @@
     return false;
   }
 
-  // Remove any candle that touches the weekly XAUT blackout. Checking both
-  // ends handles larger candles (1h/4h/1d) that cross the Friday/Sunday edge.
   function isWeekendBlackoutKline(openTimeMs, closeTimeMs) {
     const open = Number(openTimeMs);
     const close = Number(closeTimeMs);
@@ -41,11 +53,21 @@
   }
 
   function filterKlineRows(rows) {
-    if (!Array.isArray(rows)) return rows;
-    return rows.filter(row => {
-      if (!Array.isArray(row)) return true;
-      return !isWeekendBlackoutKline(row[0], row[6]);
-    });
+    if (!Array.isArray(rows)) return [];
+    return rows.filter(row => Array.isArray(row) && !isWeekendBlackoutKline(row[0], row[6]));
+  }
+
+  function dedupeAndTrim(rows, limit) {
+    const byTime = new Map();
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      const openTime = Number(row[0]);
+      if (!Number.isFinite(openTime)) continue;
+      byTime.set(openTime, Array.from(row));
+    }
+    return [...byTime.values()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .slice(-limit);
   }
 
   // Inject XAUTUSDT into the app's existing symbol list without changing the
@@ -73,54 +95,90 @@
     return result;
   };
 
-  function routeRestUrl(rawUrl) {
+  function parseXautRestRequest(input) {
     try {
-      const url = new URL(String(rawUrl), window.location.href);
-      if (url.hostname === 'api.binance.com'
-          && url.pathname === '/api/v3/klines'
-          && url.searchParams.get('symbol')?.toUpperCase() === XAUT_SYMBOL) {
-        const futures = new URL(FUTURES_REST);
-        for (const [key, value] of url.searchParams.entries()) {
-          futures.searchParams.set(key, value);
-        }
-        return { url: futures.toString(), xaut: true };
-      }
-      if (url.hostname === 'fapi.binance.com'
-          && url.pathname === '/fapi/v1/klines'
-          && url.searchParams.get('symbol')?.toUpperCase() === XAUT_SYMBOL) {
-        return { url: url.toString(), xaut: true };
-      }
-    } catch (_) {}
-    return { url: String(rawUrl), xaut: false };
-  }
+      const raw = input instanceof Request ? input.url : String(input);
+      const url = new URL(raw, window.location.href);
+      const isSpotKlines = url.hostname === 'api.binance.com' && url.pathname === '/api/v3/klines';
+      const isFuturesKlines = url.hostname === 'fapi.binance.com' && url.pathname === '/fapi/v1/klines';
+      if (!isSpotKlines && !isFuturesKlines) return null;
+      if (url.searchParams.get('symbol')?.toUpperCase() !== XAUT_SYMBOL) return null;
 
-  async function filterXautResponse(response) {
-    if (!response?.ok) return response;
-    try {
-      const payload = await response.clone().json();
-      const filtered = filterKlineRows(payload);
-      return new Response(JSON.stringify(filtered), {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
+      const interval = url.searchParams.get('interval') || '';
+      const intervalMs = INTERVAL_MS[interval];
+      if (!intervalMs) return null;
+
+      const requested = Number(url.searchParams.get('limit'));
+      const limit = Number.isFinite(requested)
+        ? Math.max(1, Math.min(1500, Math.trunc(requested)))
+        : 500;
+
+      return { url, interval, intervalMs, limit };
     } catch (_) {
-      return response;
+      return null;
     }
   }
 
-  const nativeFetch = window.fetch.bind(window);
-  window.fetch = async function routedFetch(input, init) {
-    if (input instanceof Request) {
-      const routed = routeRestUrl(input.url);
-      const request = routed.url !== input.url ? new Request(routed.url, input) : input;
-      const response = await nativeFetch(request, init);
-      return routed.xaut ? filterXautResponse(response) : response;
+  function buildFuturesPageUrl(meta, endTime) {
+    const url = new URL(FUTURES_REST);
+    url.searchParams.set('symbol', XAUT_SYMBOL);
+    url.searchParams.set('interval', meta.interval);
+    url.searchParams.set('limit', String(meta.limit));
+    url.searchParams.set('endTime', String(endTime));
+    return url;
+  }
+
+  async function fetchXautHistory(meta, init = {}) {
+    const collected = [];
+    let endTime = Number(meta.url.searchParams.get('endTime'));
+    if (!Number.isFinite(endTime)) endTime = Date.now();
+    let lastResponse = null;
+
+    for (let page = 0; page < MAX_BACKFILL_PAGES && collected.length < meta.limit; page += 1) {
+      const pageUrl = buildFuturesPageUrl(meta, endTime);
+      const response = await nativeFetch(pageUrl.toString(), { ...init, cache: 'no-store' });
+      lastResponse = response;
+      if (!response.ok) return response;
+
+      let rawRows;
+      try {
+        rawRows = await response.json();
+      } catch (_) {
+        return response;
+      }
+      if (!Array.isArray(rawRows)) rawRows = [];
+
+      const filtered = filterKlineRows(rawRows);
+      if (filtered.length) collected.unshift(...filtered);
+
+      if (rawRows.length) {
+        const earliestRaw = Number(rawRows[0]?.[0]);
+        if (!Number.isFinite(earliestRaw)) break;
+        endTime = earliestRaw - 1;
+      } else {
+        // No exchange rows at all (for example before listing). Move backward
+        // once more; repeated empty pages will naturally hit the page guard.
+        endTime -= meta.limit * meta.intervalMs;
+      }
     }
 
-    const routed = routeRestUrl(input);
-    const response = await nativeFetch(routed.url, init);
-    return routed.xaut ? filterXautResponse(response) : response;
+    const rows = dedupeAndTrim(collected, meta.limit);
+    const headers = new Headers(lastResponse?.headers || {});
+    headers.set('content-type', 'application/json');
+    headers.set('x-stocks-market', 'binance-usdm-xaut');
+    headers.set('x-stocks-weekend-blackout', 'America/Vancouver Fri14:00-Sun15:00');
+
+    return new Response(JSON.stringify(rows), {
+      status: 200,
+      statusText: 'OK',
+      headers,
+    });
+  }
+
+  window.fetch = async function routedFetch(input, init) {
+    const meta = parseXautRestRequest(input);
+    if (!meta) return nativeFetch(input, init);
+    return fetchXautHistory(meta, init);
   };
 
   function routeWebSocketUrl(rawUrl) {
@@ -144,47 +202,49 @@
     }
   }
 
-  const NativeWebSocket = window.WebSocket;
-  class RoutedWebSocket extends NativeWebSocket {
-    constructor(url, protocols) {
-      const routed = routeWebSocketUrl(url);
-      if (protocols === undefined) super(routed.url);
-      else super(routed.url, protocols);
-      this.__xautFiltered = routed.xaut;
-      this.__messageListenerMap = new WeakMap();
-    }
-
-    addEventListener(type, listener, options) {
-      if (type !== 'message' || !this.__xautFiltered || typeof listener !== 'function') {
-        return super.addEventListener(type, listener, options);
+  if (NativeWebSocket) {
+    class RoutedWebSocket extends NativeWebSocket {
+      constructor(url, protocols) {
+        const routed = routeWebSocketUrl(url);
+        if (protocols === undefined) super(routed.url);
+        else super(routed.url, protocols);
+        this.__xautFiltered = routed.xaut;
+        this.__messageListenerMap = new WeakMap();
       }
-      const wrapped = event => {
-        if (isBlockedMessage(event)) return;
-        listener.call(this, event);
-      };
-      this.__messageListenerMap.set(listener, wrapped);
-      return super.addEventListener(type, wrapped, options);
-    }
 
-    removeEventListener(type, listener, options) {
-      if (type === 'message' && this.__xautFiltered && typeof listener === 'function') {
-        const wrapped = this.__messageListenerMap.get(listener);
-        if (wrapped) {
-          this.__messageListenerMap.delete(listener);
-          return super.removeEventListener(type, wrapped, options);
+      addEventListener(type, listener, options) {
+        if (type !== 'message' || !this.__xautFiltered || typeof listener !== 'function') {
+          return super.addEventListener(type, listener, options);
         }
+        const wrapped = event => {
+          if (isBlockedMessage(event)) return;
+          listener.call(this, event);
+        };
+        this.__messageListenerMap.set(listener, wrapped);
+        return super.addEventListener(type, wrapped, options);
       }
-      return super.removeEventListener(type, listener, options);
-    }
-  }
-  window.WebSocket = RoutedWebSocket;
 
-  window.__xautMarketRouter = {
+      removeEventListener(type, listener, options) {
+        if (type === 'message' && this.__xautFiltered && typeof listener === 'function') {
+          const wrapped = this.__messageListenerMap.get(listener);
+          if (wrapped) {
+            this.__messageListenerMap.delete(listener);
+            return super.removeEventListener(type, wrapped, options);
+          }
+        }
+        return super.removeEventListener(type, listener, options);
+      }
+    }
+    window.WebSocket = RoutedWebSocket;
+  }
+
+  window.__xautMarketRouter = Object.freeze({
     symbol: XAUT_SYMBOL,
     rest: FUTURES_REST,
     websocket: FUTURES_WS_PREFIX,
     timezone: VANCOUVER_TZ,
+    maxBackfillPages: MAX_BACKFILL_PAGES,
     isWeekendBlackoutInstant,
     isWeekendBlackoutKline,
-  };
+  });
 })();
