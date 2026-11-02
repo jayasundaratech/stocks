@@ -9,6 +9,7 @@
   <meta name="description" content="Dynamic multi-chart Binance crypto dashboard" />
   <title>Crypto Live Charts</title>
   <link rel="stylesheet" href="styles.css?v=layout-dropdown-20261101-1" />
+  <link rel="stylesheet" href="layout-fixes.css?v=volume-layout-20261101-2" />
 </head>
 <body>
   <header class="app-header">
@@ -23,16 +24,16 @@
           <span class="layout-caret">▾</span>
         </summary>
         <div class="layout-menu" role="menu" aria-label="Chart layout options">
-          <button class="layout-button" type="button" data-layout="1" role="menuitem" onclick="this.closest('details').removeAttribute('open')">
+          <button class="layout-button" type="button" data-layout="1" role="menuitem">
             <span class="layout-icon icon-1"></span><span>1 chart</span>
           </button>
-          <button class="layout-button" type="button" data-layout="2" role="menuitem" onclick="this.closest('details').removeAttribute('open')">
+          <button class="layout-button" type="button" data-layout="2" role="menuitem">
             <span class="layout-icon icon-2"></span><span>2 charts</span>
           </button>
-          <button class="layout-button" type="button" data-layout="3" role="menuitem" onclick="this.closest('details').removeAttribute('open')">
+          <button class="layout-button" type="button" data-layout="3" role="menuitem">
             <span class="layout-icon icon-3"></span><span>3 charts</span>
           </button>
-          <button class="layout-button active" type="button" data-layout="4" role="menuitem" onclick="this.closest('details').removeAttribute('open')">
+          <button class="layout-button active" type="button" data-layout="4" role="menuitem">
             <span class="layout-icon icon-4"></span><span>4 charts</span>
           </button>
         </div>
@@ -54,6 +55,6 @@
     Live crypto market data from Binance Spot REST and WebSocket APIs. Not financial advice.
   </footer>
 
-  <script type="module" src="app-v2.js?v=layout-dropdown-20261101-1"></script>
+  <script type="module" src="app-v3.js?v=volume-layout-20261101-2"></script>
 </body>
 </html>
