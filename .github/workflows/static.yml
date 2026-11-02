@@ -1,29 +1,129 @@
-# Simple workflow for deploying static content to GitHub Pages
+# Production Pages deploy remains main-only; the research branch runs a one-off SOLUSDT analysis.
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: ["main", "analysis-sol-sr-prob-20261102"]
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
-  group: "pages"
+  group: "pages-${{ github.ref }}"
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
+  analyze-sol:
+    if: github.ref == 'refs/heads/analysis-sol-sr-prob-20261102'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Analyze SOLUSDT 1h next-candle probabilities
+        shell: python
+        run: |
+          import csv, io, json, math, urllib.request
+          from datetime import datetime, timezone
+
+          URL = "https://raw.githubusercontent.com/DaruFinance/quant-research-framework/main/data/SOLUSDT_1h.csv"
+          req = urllib.request.Request(URL, headers={"User-Agent":"Mozilla/5.0"})
+          with urllib.request.urlopen(req, timeout=120) as r:
+              text = r.read().decode("utf-8")
+
+          bars=[]
+          for row in csv.DictReader(io.StringIO(text)):
+              bars.append({
+                  "time": int(row["time"]), "open": float(row["open"]),
+                  "high": float(row["high"]), "low": float(row["low"]),
+                  "close": float(row["close"]), "volume": float(row["volume"]),
+              })
+          bars.sort(key=lambda x:x["time"])
+
+          def side(b):
+              return "bull" if b["close"]>b["open"] else "bear" if b["close"]<b["open"] else "doji"
+
+          # Wilder ATR(14), causal.
+          trs=[]; atr=[None]*len(bars)
+          for i,b in enumerate(bars):
+              if i==0: tr=b["high"]-b["low"]
+              else:
+                  pc=bars[i-1]["close"]
+                  tr=max(b["high"]-b["low"],abs(b["high"]-pc),abs(b["low"]-pc))
+              trs.append(tr)
+          n=14
+          v=sum(trs[:n])/n; atr[n-1]=v
+          for i in range(n,len(bars)):
+              v=(v*(n-1)+trs[i])/n; atr[i]=v
+
+          # 3-left/3-right swing pivots. The pivot is only usable once the
+          # 3 right-side candles have closed, avoiding look-ahead bias.
+          left=right=3
+          sp=[]; rp=[]
+          for confirmation in range(left+right,len(bars)):
+              j=confirmation-right
+              lows=[bars[k]["low"] for k in range(j-left,j+right+1)]
+              highs=[bars[k]["high"] for k in range(j-left,j+right+1)]
+              if bars[j]["low"]==min(lows) and lows.count(bars[j]["low"])==1:
+                  sp.append((confirmation,j,bars[j]["low"]))
+              if bars[j]["high"]==max(highs) and highs.count(bars[j]["high"])==1:
+                  rp.append((confirmation,j,bars[j]["high"]))
+
+          def wilson(k,n,z=1.959963984540054):
+              if n<=0:return (None,None)
+              p=k/n; den=1+z*z/n
+              ctr=(p+z*z/(2*n))/den
+              half=z*math.sqrt((p*(1-p)+z*z/(4*n))/n)/den
+              return ctr-half,ctr+half
+
+          LOOKBACK=240
+          def analyze(tol_atr):
+              active_s=[]; active_r=[]; si=ri=0
+              prev_s=False; prev_r=False; events=[]
+              for i in range(max(20,left+right),len(bars)-1):
+                  while si<len(sp) and sp[si][0]<=i:
+                      active_s.append(sp[si]); si+=1
+                  while ri<len(rp) and rp[ri][0]<=i:
+                      active_r.append(rp[ri]); ri+=1
+                  active_s=[p for p in active_s if p[1]>=i-LOOKBACK]
+                  active_r=[p for p in active_r if p[1]>=i-LOOKBACK]
+                  if atr[i] is None or not active_s or not active_r: continue
+                  b=bars[i]; tol=tol_atr*atr[i]
+                  sc=[p for p in active_s if p[2]<=b["close"]+tol]
+                  rc=[p for p in active_r if p[2]>=b["close"]-tol]
+                  support=max((p[2] for p in sc),default=None)
+                  resistance=min((p[2] for p in rc),default=None)
+                  hit_s=support is not None and b["low"]<=support+tol and b["high"]>=support-tol and b["close"]>=support-tol
+                  hit_r=resistance is not None and b["high"]>=resistance-tol and b["low"]<=resistance+tol and b["close"]<=resistance+tol
+                  first=side(b); nxt=side(bars[i+1])
+                  if not (hit_s and hit_r):
+                      if hit_s and not prev_s and first!="doji": events.append(("support",first,nxt))
+                      if hit_r and not prev_r and first!="doji": events.append(("resistance",first,nxt))
+                  prev_s=hit_s; prev_r=hit_r
+              out={}
+              for level in ("support","resistance"):
+                  for first in ("bull","bear"):
+                      xs=[e for e in events if e[0]==level and e[1]==first]
+                      nb=sum(e[2]=="bull" for e in xs); nr=sum(e[2]=="bear" for e in xs); nd=sum(e[2]=="doji" for e in xs)
+                      dn=nb+nr; pb=nb/dn if dn else None; lo,hi=wilson(nb,dn)
+                      out[f"{level}_{first}"]={"n":len(xs),"directional_n":dn,"next_bull":nb,"next_bear":nr,"next_doji":nd,"p_bull":pb,"p_bear":None if pb is None else 1-pb,"bull_ci95":[lo,hi]}
+              return out
+
+          dirs=[side(b) for b in bars]
+          baseline=sum(x=="bull" for x in dirs)/sum(x in ("bull","bear") for x in dirs)
+          result={
+              "rows":len(bars),
+              "first_utc":datetime.fromtimestamp(bars[0]["time"],timezone.utc).isoformat(),
+              "last_utc":datetime.fromtimestamp(bars[-1]["time"],timezone.utc).isoformat(),
+              "timeframe":"1h",
+              "baseline_p_bull":baseline,
+              "rules":{"pivot":"3-left/3-right confirmed swing","lookback_bars":240,"atr":"Wilder ATR(14)","first_touch":"previous candle not touching same side"},
+              "tolerances":{str(t):analyze(t) for t in (0.15,0.25,0.35)}
+          }
+          print("RESULT_JSON="+json.dumps(result,separators=(",",":")))
+
   deploy:
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -36,7 +136,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
           path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
