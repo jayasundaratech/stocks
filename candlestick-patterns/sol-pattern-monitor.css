@@ -1,0 +1,54 @@
+.sol-pattern-monitor {
+  position: absolute;
+  left: .65rem;
+  top: .55rem;
+  z-index: 12;
+  width: min(410px, calc(100% - 7.2rem));
+  max-height: min(46%, 330px);
+  overflow: hidden;
+  border: 1px solid rgba(148,163,184,.34);
+  border-radius: .55rem;
+  background: rgba(8, 13, 25, .90);
+  color: #eef3ff;
+  box-shadow: 0 10px 30px rgba(0,0,0,.28);
+  backdrop-filter: blur(5px);
+  font-size: 11px;
+}
+.sol-pattern-monitor[hidden] { display: none !important; }
+.sol-pattern-head { display:flex; align-items:center; gap:.55rem; padding:.48rem .55rem; border-bottom:1px solid rgba(148,163,184,.2); }
+.sol-pattern-head > div { min-width:0; display:flex; flex-direction:column; gap:.08rem; }
+.sol-pattern-head strong { font-size:11.5px; }
+.sol-pattern-head span { color:#91a0bd; font-size:9.5px; }
+.sol-pattern-scan-now { margin-left:auto; border:1px solid #33466d; border-radius:.35rem; background:#17233b; color:#e6edff; padding:.23rem .42rem; cursor:pointer; font-size:10px; }
+.sol-pattern-scan-now:hover { border-color:#2f6df6; background:#1c315c; }
+.sol-pattern-statuses { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; background:rgba(148,163,184,.15); border-bottom:1px solid rgba(148,163,184,.18); }
+.sol-pattern-statuses span { min-width:0; padding:.28rem .3rem; background:rgba(15,23,42,.94); color:#8fa0bd; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:8.5px; }
+.sol-pattern-statuses b { color:#dce6ff; }
+.sol-pattern-statuses span[data-state="detected"] { color:#fde68a; }
+.sol-pattern-statuses span[data-state="error"] { color:#fca5a5; }
+.sol-pattern-statuses span[data-state="scanning"] { color:#93c5fd; }
+.sol-pattern-alerts { max-height:220px; overflow:auto; }
+.sol-pattern-alert { padding:.42rem .52rem; border-bottom:1px solid rgba(148,163,184,.13); border-left:3px solid #64748b; }
+.sol-pattern-alert:last-child { border-bottom:0; }
+.sol-pattern-alert.bullish { border-left-color:#22c55e; background:rgba(34,197,94,.055); }
+.sol-pattern-alert.bearish { border-left-color:#ef4444; background:rgba(239,68,68,.055); }
+.sol-pattern-alert.is-new { animation:solPatternFlash 1.6s ease-out 1; }
+.sol-pattern-alert-main { display:flex; align-items:center; gap:.45rem; }
+.sol-pattern-alert-main strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10.5px; }
+.sol-pattern-tf { margin-left:auto; flex:0 0 auto; border-radius:.3rem; padding:.1rem .3rem; background:#263b68; color:#dbe8ff; font-weight:800; }
+.sol-pattern-alert-time { margin-top:.14rem; color:#8fa0bd; font-size:8.5px; }
+.sol-pattern-empty { padding:.65rem .58rem; color:#91a0bd; line-height:1.35; }
+@keyframes solPatternFlash { 0% { background:rgba(250,204,21,.30); } 100% { background:transparent; } }
+body[data-theme="light"] .sol-pattern-monitor { background:rgba(255,255,255,.94); color:#111827; border-color:rgba(100,116,139,.35); }
+body[data-theme="light"] .sol-pattern-statuses span { background:#f8fafc; color:#64748b; }
+body[data-theme="light"] .sol-pattern-statuses b { color:#1e293b; }
+body[data-theme="light"] .sol-pattern-scan-now { background:#eef2ff; color:#1e293b; }
+@media (max-width:720px) {
+  .sol-pattern-monitor { left:.35rem; top:.35rem; width:min(360px, calc(100% - 5.4rem)); max-height:42%; font-size:10px; }
+  .sol-pattern-statuses { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:460px) {
+  .sol-pattern-monitor { width:calc(100% - 4.9rem); max-height:38%; }
+  .sol-pattern-alerts { max-height:150px; }
+  .sol-pattern-head strong { font-size:10.5px; }
+}
