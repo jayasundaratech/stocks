@@ -1,0 +1,37 @@
+.chart-axis-live-clock {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  z-index: 60;
+  min-width: 104px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 5px;
+  border-radius: 2px;
+  background: rgba(13, 20, 37, .96);
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-theme="light"] .chart-axis-live-clock {
+  background: rgba(255, 255, 255, .96);
+  color: #374151;
+}
+
+@media (max-width: 620px) {
+  .chart-axis-live-clock {
+    right: 2px;
+    min-width: 96px;
+    font-size: 9px;
+    padding: 0 4px;
+  }
+}
