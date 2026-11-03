@@ -17,8 +17,7 @@
   }
 
   function ensureClock(card) {
-    const wrap = card?.querySelector('.chart-canvas-wrap');
-    if (!wrap) return null;
+    if (!card) return null;
 
     let clock = card.querySelector(`.${CLOCK_CLASS}`);
     if (!clock) {
@@ -27,7 +26,9 @@
       clock.setAttribute('role', 'timer');
       clock.setAttribute('aria-label', 'Vancouver time UTC minus 7');
       clock.title = 'Vancouver Time (UTC-7)';
-      wrap.appendChild(clock);
+      card.appendChild(clock);
+    } else if (clock.parentElement !== card) {
+      card.appendChild(clock);
     }
 
     return clock;
@@ -75,6 +76,7 @@
     formatUtcMinus7,
     offset: 'UTC-7',
     scope: 'all-charts',
+    placement: 'bottom-bar',
   };
 
   globalThis.__chartClock = globalThis.__solChartClock;
