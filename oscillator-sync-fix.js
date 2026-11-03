@@ -15,7 +15,7 @@ function recordsForCard(card) {
   const main = mainRecords().find(record => record.container === mainHost) || null;
   const hosts = [...card.querySelectorAll('.osc-chart-host')];
   const lower = hosts.map(host => oscRecords().find(record => record.container === host)).filter(Boolean);
-  return { main, lower, all: [main, ...lower].filter(Boolean) };
+  return { card, main, lower, all: [main, ...lower].filter(Boolean) };
 }
 
 function broadcastLogicalRange(set, source, range) {
@@ -37,22 +37,47 @@ function broadcastLogicalRange(set, source, range) {
   }
 }
 
-function configureChartInteractions(set) {
-  if (!set.main) return;
+function paneIsExpanded(record) {
+  const pane = record?.container?.closest?.('.oscillator-pane');
+  if (!pane) return false;
+  return !pane.classList.contains('is-collapsed');
+}
+
+function updateTimeAxisOwner(set) {
+  if (!set?.main) return;
+
+  const expandedLower = set.lower.filter(paneIsExpanded);
+  const owner = expandedLower.length ? expandedLower[expandedLower.length - 1] : set.main;
 
   try {
-    set.main.chart.timeScale().applyOptions({ visible: false, rightOffset: 6 });
+    set.main.chart.timeScale().applyOptions({
+      visible: owner === set.main,
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 6,
+    });
   } catch (_) {}
 
-  set.lower.forEach((record, index) => {
+  set.lower.forEach(record => {
     try {
-      record.chart.priceScale('right').applyOptions({ minimumWidth: 86 });
       record.chart.timeScale().applyOptions({
-        visible: index === set.lower.length - 1,
+        visible: record === owner,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 6,
       });
+    } catch (_) {}
+  });
+
+  requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+}
+
+function configureChartInteractions(set) {
+  if (!set.main) return;
+
+  set.lower.forEach(record => {
+    try {
+      record.chart.priceScale('right').applyOptions({ minimumWidth: 86 });
       record.chart.applyOptions({
         handleScroll: {
           mouseWheel: true,
@@ -69,16 +94,18 @@ function configureChartInteractions(set) {
       });
     } catch (_) {}
   });
+
+  updateTimeAxisOwner(set);
 }
 
 function installCard(card) {
-  if (card.__exactOscSyncInstalledV3) return true;
+  if (card.__exactOscSyncInstalledV4) return true;
   const set = recordsForCard(card);
   if (!set.main || set.lower.length < 2) return false;
 
-  card.__exactOscSyncInstalledV3 = true;
+  card.__exactOscSyncInstalledV4 = true;
   set.syncing = false;
-  card.__oscSyncSetV3 = set;
+  card.__oscSyncSetV4 = set;
   configureChartInteractions(set);
 
   for (const record of set.all) {
@@ -89,14 +116,26 @@ function installCard(card) {
     });
   }
 
+  const paneObserver = new MutationObserver(() => {
+    requestAnimationFrame(() => updateTimeAxisOwner(set));
+  });
+  paneObserver.observe(card, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'hidden', 'style'],
+  });
+  set.paneObserver = paneObserver;
+
   const initial = set.main.chart.timeScale().getVisibleLogicalRange?.();
   if (initial) broadcastLogicalRange(set, set.main, initial);
 
   setTimeout(() => {
+    updateTimeAxisOwner(set);
     const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
     if (range) broadcastLogicalRange(set, set.main, range);
   }, 250);
   setTimeout(() => {
+    updateTimeAxisOwner(set);
     const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
     if (range) broadcastLogicalRange(set, set.main, range);
   }, 1000);
@@ -116,8 +155,9 @@ installAll();
 
 setInterval(() => {
   document.querySelectorAll('.chart-card').forEach(card => {
-    const set = card.__oscSyncSetV3;
+    const set = card.__oscSyncSetV4;
     if (!set || set.syncing) return;
+    updateTimeAxisOwner(set);
     const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
     if (range) broadcastLogicalRange(set, set.main, range);
   });
