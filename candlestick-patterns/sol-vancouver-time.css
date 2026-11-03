@@ -1,0 +1,22 @@
+.sol-vancouver-time {
+  margin-top: .38rem;
+  padding-top: .3rem;
+  border-top: 1px solid rgba(148, 163, 184, .18);
+  color: #93a4c2;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1.3;
+}
+
+.sol-pattern-alert > .sol-vancouver-time {
+  margin-top: .28rem;
+  padding-top: .24rem;
+  color: #7f8da8;
+  font-size: 8px;
+}
+
+body[data-theme="light"] .sol-vancouver-time {
+  border-top-color: rgba(100, 116, 139, .2);
+  color: #64748b;
+}
