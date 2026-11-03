@@ -49,12 +49,16 @@ function updateTimeAxisOwner(set) {
   const expandedLower = set.lower.filter(paneIsExpanded);
   const owner = expandedLower.length ? expandedLower[expandedLower.length - 1] : set.main;
 
+  // Do not keep re-applying time-scale options while the user is dragging.
+  // Only change visibility when the owner actually changes due to collapse/expand.
+  if (set.timeAxisOwner === owner) return;
+  set.timeAxisOwner = owner;
+
   try {
     set.main.chart.timeScale().applyOptions({
       visible: owner === set.main,
       timeVisible: true,
       secondsVisible: false,
-      rightOffset: 6,
     });
   } catch (_) {}
 
@@ -64,7 +68,6 @@ function updateTimeAxisOwner(set) {
         visible: record === owner,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 6,
       });
     } catch (_) {}
   });
@@ -72,40 +75,46 @@ function updateTimeAxisOwner(set) {
   requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 }
 
+function enablePanAndZoom(record, isLower = false) {
+  if (!record?.chart) return;
+  try {
+    if (isLower) record.chart.priceScale('right').applyOptions({ minimumWidth: 86 });
+    record.chart.applyOptions({
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: { time: true, price: false },
+        axisDoubleClickReset: { time: true, price: false },
+      },
+    });
+  } catch (_) {}
+}
+
 function configureChartInteractions(set) {
   if (!set.main) return;
 
-  set.lower.forEach(record => {
-    try {
-      record.chart.priceScale('right').applyOptions({ minimumWidth: 86 });
-      record.chart.applyOptions({
-        handleScroll: {
-          mouseWheel: true,
-          pressedMouseMove: true,
-          horzTouchDrag: true,
-          vertTouchDrag: false,
-        },
-        handleScale: {
-          mouseWheel: true,
-          pinch: true,
-          axisPressedMouseMove: { time: true, price: false },
-          axisDoubleClickReset: { time: true, price: false },
-        },
-      });
-    } catch (_) {}
-  });
+  // Keep drag-to-pan and scroll/zoom enabled on every synchronized pane.
+  enablePanAndZoom(set.main, false);
+  set.lower.forEach(record => enablePanAndZoom(record, true));
 
   updateTimeAxisOwner(set);
 }
 
 function installCard(card) {
-  if (card.__exactOscSyncInstalledV4) return true;
+  if (card.__exactOscSyncInstalledV5) return true;
   const set = recordsForCard(card);
   if (!set.main || set.lower.length < 2) return false;
 
-  card.__exactOscSyncInstalledV4 = true;
+  card.__exactOscSyncInstalledV5 = true;
   set.syncing = false;
-  card.__oscSyncSetV4 = set;
+  set.timeAxisOwner = null;
+  card.__oscSyncSetV5 = set;
   configureChartInteractions(set);
 
   for (const record of set.all) {
@@ -116,8 +125,13 @@ function installCard(card) {
     });
   }
 
-  const paneObserver = new MutationObserver(() => {
-    requestAnimationFrame(() => updateTimeAxisOwner(set));
+  // Axis ownership only needs to change when pane collapse state changes.
+  const paneObserver = new MutationObserver(mutations => {
+    const collapseChanged = mutations.some(mutation => {
+      if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') return false;
+      return mutation.target instanceof Element && mutation.target.classList.contains('oscillator-pane');
+    });
+    if (collapseChanged) requestAnimationFrame(() => updateTimeAxisOwner(set));
   });
   paneObserver.observe(card, {
     subtree: true,
@@ -153,11 +167,11 @@ function installAll() {
 
 installAll();
 
+// Keep ranges synchronized, but do not re-apply time-axis layout options here.
 setInterval(() => {
   document.querySelectorAll('.chart-card').forEach(card => {
-    const set = card.__oscSyncSetV4;
+    const set = card.__oscSyncSetV5;
     if (!set || set.syncing) return;
-    updateTimeAxisOwner(set);
     const range = set.main.chart.timeScale().getVisibleLogicalRange?.();
     if (range) broadcastLogicalRange(set, set.main, range);
   });
