@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const SYMBOL = 'SOLUSDT';
   const UTC_MINUS_7_MS = 7 * 60 * 60 * 1000;
   const CLOCK_CLASS = 'sol-chart-vancouver-clock';
   let timerId = null;
@@ -17,22 +16,11 @@
     return `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} UTC-7`;
   }
 
-  function isSolCard(card) {
-    return card?.querySelector('.ticker')?.textContent?.trim().toUpperCase() === SYMBOL;
-  }
-
   function ensureClock(card) {
-    const existing = card.querySelector(`.${CLOCK_CLASS}`);
-
-    if (!isSolCard(card)) {
-      existing?.remove();
-      return null;
-    }
-
-    const wrap = card.querySelector('.chart-canvas-wrap');
+    const wrap = card?.querySelector('.chart-canvas-wrap');
     if (!wrap) return null;
 
-    let clock = existing;
+    let clock = card.querySelector(`.${CLOCK_CLASS}`);
     if (!clock) {
       clock = document.createElement('div');
       clock.className = CLOCK_CLASS;
@@ -63,11 +51,20 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') render();
     });
+
+    const observer = new MutationObserver(render);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+    });
+    globalThis.__chartClockObserver = observer;
   }
 
   function stop() {
     if (timerId) window.clearInterval(timerId);
     timerId = null;
+    globalThis.__chartClockObserver?.disconnect?.();
+    globalThis.__chartClockObserver = null;
     document.querySelectorAll(`.${CLOCK_CLASS}`).forEach(node => node.remove());
   }
 
@@ -77,7 +74,10 @@
     render,
     formatUtcMinus7,
     offset: 'UTC-7',
+    scope: 'all-charts',
   };
+
+  globalThis.__chartClock = globalThis.__solChartClock;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
