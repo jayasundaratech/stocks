@@ -122,7 +122,7 @@ function installCard(card) {
   paneObserver.observe(card, {
     subtree: true,
     attributes: true,
-    attributeFilter: ['class', 'hidden', 'style'],
+    attributeFilter: ['class'],
   });
   set.paneObserver = paneObserver;
 
