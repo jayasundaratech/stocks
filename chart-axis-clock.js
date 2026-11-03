@@ -16,14 +16,18 @@
     return `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:${pad(shifted.getUTCSeconds())} UTC-7`;
   }
 
-  function activeAxisHost(card) {
-    const rsiPane = card.querySelector('.rsi-pane');
-    const rsiBody = rsiPane?.querySelector('.oscillator-body');
-    const rsiExpanded = rsiPane && !rsiPane.classList.contains('is-collapsed') &&
-      rsiBody && getComputedStyle(rsiBody).display !== 'none';
+  function paneAxisHost(card, selector) {
+    const pane = card.querySelector(selector);
+    const body = pane?.querySelector('.oscillator-body');
+    const expanded = pane && !pane.classList.contains('is-collapsed') &&
+      body && getComputedStyle(body).display !== 'none';
+    return expanded ? body : null;
+  }
 
-    if (rsiExpanded) return rsiBody;
-    return card.querySelector('.chart-canvas-wrap');
+  function activeAxisHost(card) {
+    return paneAxisHost(card, '.rsi-pane') ||
+      paneAxisHost(card, '.stoch-pane') ||
+      card.querySelector('.chart-canvas-wrap');
   }
 
   function ensureClock(card) {
@@ -85,7 +89,7 @@
     render,
     formatUtcMinus7,
     offset: 'UTC-7',
-    placement: 'active-time-axis-bottom-right',
+    placement: 'lowest-visible-time-axis-bottom-right',
   };
 
   if (document.readyState === 'loading') {
