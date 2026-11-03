@@ -1,43 +1,74 @@
 (() => {
-  const TZ = 'America/Vancouver';
+  const FIXED_OFFSET_HOURS = -7;
+  const FIXED_OFFSET_MS = FIXED_OFFSET_HOURS * 60 * 60 * 1000;
+  const FIXED_OFFSET_LABEL = 'UTC-7';
   const STORAGE_KEY = 'stocks-dashboard-theme';
   const originalToLocaleTimeString = Date.prototype.toLocaleTimeString;
 
+  function shiftedDate(date) {
+    return new Date(date.getTime() + FIXED_OFFSET_MS);
+  }
+
   Date.prototype.toLocaleTimeString = function(locale, options = {}) {
     const merged = { ...options };
-    if (!merged.timeZone) merged.timeZone = TZ;
-    return originalToLocaleTimeString.call(this, locale, merged);
+    if (merged.timeZone) return originalToLocaleTimeString.call(this, locale, merged);
+    merged.timeZone = 'UTC';
+    return originalToLocaleTimeString.call(shiftedDate(this), locale, merged);
   };
 
   function asDate(time) {
     if (typeof time === 'number') return new Date(time * 1000);
     if (typeof time === 'string') return new Date(time);
+    if (time && typeof time === 'object' && Number.isFinite(time.timestamp)) {
+      return new Date(Number(time.timestamp) * 1000);
+    }
     if (time && typeof time === 'object' && 'year' in time) {
       return new Date(Date.UTC(time.year, (time.month || 1) - 1, time.day || 1));
     }
     return new Date();
   }
 
+  function fixedOffsetDate(time) {
+    return shiftedDate(asDate(time));
+  }
+
   function formatTick(time, tickMarkType) {
-    const date = asDate(time);
+    const date = fixedOffsetDate(time);
+
     if (tickMarkType === 0) {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric' }).format(date);
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'UTC',
+        year: 'numeric',
+      }).format(date);
     }
-    if (tickMarkType === 1 || tickMarkType === 2) {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, month: 'short', day: 'numeric' }).format(date);
+
+    if (tickMarkType === 1) {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'UTC',
+        month: 'short',
+      }).format(date);
     }
+
+    if (tickMarkType === 2) {
+      return String(date.getUTCDate());
+    }
+
     return new Intl.DateTimeFormat('en-CA', {
-      timeZone: TZ,
-      hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
     }).format(date);
   }
 
   function formatCrosshairTime(time) {
-    const date = asDate(time);
+    const date = fixedOffsetDate(time);
     return new Intl.DateTimeFormat('en-CA', {
-      timeZone: TZ,
-      month: 'short', day: '2-digit',
-      hour: '2-digit', minute: '2-digit',
+      timeZone: 'UTC',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
       hour12: false,
     }).format(date);
   }
@@ -108,7 +139,7 @@
     const timezone = document.createElement('span');
     timezone.className = 'timezone-badge';
     timezone.textContent = 'Vancouver time';
-    timezone.title = 'Chart timestamps use America/Vancouver';
+    timezone.title = `Chart timeline uses fixed ${FIXED_OFFSET_LABEL}`;
 
     const button = document.createElement('button');
     button.id = 'themeToggle';
@@ -141,7 +172,8 @@
     }, 250);
   }
 
-  window.__dashboardTimezone = TZ;
+  window.__dashboardTimezone = FIXED_OFFSET_LABEL;
+  window.__dashboardTimezoneOffsetHours = FIXED_OFFSET_HOURS;
   window.__setDashboardTheme = setTheme;
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
