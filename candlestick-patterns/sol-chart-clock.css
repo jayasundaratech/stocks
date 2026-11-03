@@ -1,0 +1,36 @@
+.sol-chart-vancouver-clock {
+  position: absolute;
+  right: .15rem;
+  bottom: .12rem;
+  z-index: 30;
+  min-width: 108px;
+  padding: .2rem .42rem;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: .2rem;
+  background: rgba(8, 13, 25, .96);
+  color: #eef3ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: .01em;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+body[data-theme="light"] .sol-chart-vancouver-clock {
+  border-color: rgba(100, 116, 139, .3);
+  background: rgba(255, 255, 255, .97);
+  color: #111827;
+}
+
+@media (max-width: 620px) {
+  .sol-chart-vancouver-clock {
+    right: .08rem;
+    bottom: .08rem;
+    min-width: 102px;
+    font-size: 9px;
+  }
+}
